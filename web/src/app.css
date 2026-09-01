@@ -1,0 +1,3528 @@
+/* ============================================================================
+   SCHRIFTGRÖSSEN-RASTER (zentrale Variablen für alle Text-Typen)
+   ----------------------------------------------------------------------------
+   Jeder Text-Typ hat genau eine Variable. Überall im CSS werden diese Variablen
+   statt fester px-Werte verwendet. Die Werte lassen sich auf der
+   Visualisierungsseite pro Text-Typ anpassen (getrennt für Desktop und Mobil) –
+   dort werden die Variablen zur Laufzeit überschrieben. Standardwerte hier:
+   ============================================================================ */
+:root {
+  --fs-h1: 26px;   /* Seiten-Hauptüberschrift (h1)               */
+  --fs-h2: 20px;   /* Seitentitel (h2)                           */
+  --fs-h3: 18px;   /* Block-/Kartenüberschrift                   */
+  --fs-h4: 16px;   /* Zwischenüberschrift                        */
+  --fs-body: 14px; /* Normaler Text (Basis)                      */
+  --fs-hint: 14px; /* Erklärtext / Hinweis                       */
+  --fs-table: 13px;/* Text in Tabellen                           */
+  --fs-small: 12px;/* Kleine Beschriftungen / Detail / Tags      */
+  --fs-tiny: 11px; /* Sehr kleine Angaben (Fußzeile, Version)    */
+  /* Ergänzende Text-Typen (ebenfalls auf der Visualisierungsseite anpassbar) */
+  --fs-diagram-value: 14px; /* Messwerte an den Diagramm-Knoten          */
+  --fs-diagram-text: 20px;  /* Große Texte im Übersichts-Diagramm        */
+  --fs-kpi: 24px;           /* Große Kennzahl-Werte (Statistik-Karten)   */
+  --fs-nav: 15px;           /* Seitenleiste / Menü                       */
+  --fs-charttitle: 15px;    /* Chart-/Tabellen-Titel                     */
+  --fs-badge: 12px;         /* Status-Badges                             */
+  --fs-axis: 10px;          /* Diagramm-Achsenbeschriftung               */
+}
+
+html {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 23px;
+  text-align: center;
+  /* Mobile Browser (iOS/Android) blähen längere Textzellen automatisch auf
+     ("Auto Text Sizing"), damit sie lesbarer wirken – kurze Zellen (Zahlen)
+     bleiben unberührt. Das führte dazu, dass die erste Spalte von Tabellen mit
+     langem Text (z. B. "Saldo für den Zeitraum") größer erschien als der Rest,
+     OBWOHL die CSS-font-size korrekt war. Hier global abschalten, damit die
+     gesetzten Schriftgrößen exakt eingehalten werden. */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: #fff;
+}
+
+.app {
+  /* Desktop: Sidebar links, Inhalt rechts (Sidebar überdeckt nichts). */
+  --sidebar-w: 290px;
+}
+
+.content {
+  padding: 24px 0 80px;
+  margin-left: var(--sidebar-w);
+  /* Basis-Schriftgröße für ALLE Seiteninhalte. Ohne diese erbt jedes Element,
+     das keine eigene font-size setzt, die große html-Basis (23px) und erscheint
+     dadurch viel zu groß ("Default-Falle"). Mit dieser Zeile erben neue oder
+     nicht explizit gestylte Elemente automatisch eine passende Größe, sodass das
+     wiederkehrende Schriftgrößen-Problem nicht erneut auftritt. */
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: #333;
+}
+/* Formular- und Tabellenelemente erben zuverlässig die Container-Basis, statt in
+   den Browser-Default zurückzufallen – das sind die Elemente, die von sich aus
+   eine eigene (oft größere) Default-Schrift mitbringen. Bewusst NICHT pauschal
+   span/div, damit klassenbasierte Schriftgrößen (z. B. im Übersichts-Diagramm)
+   nicht überschrieben werden. */
+.content input,
+.content select,
+.content textarea,
+.content button {
+  font-size: inherit;
+}
+/* Überschriften über zentrale Raster-Variablen. */
+.content h1 { font-size: var(--fs-h1); }
+.content h2 { font-size: var(--fs-h2); }
+.content h3 { font-size: var(--fs-h4); }
+.content h4 { font-size: var(--fs-body); }
+
+.loading {
+  padding: 80px;
+  font-size: var(--fs-h2);
+  color: #555;
+}
+
+/* Verbindungsanzeige (in Sidebar-Kopf und Top-Bar) */
+.conn {
+  display: inline-block;
+  font-size: var(--fs-small);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.conn.ok {
+  background: #76b900;
+  color: #000;
+}
+.conn.lost {
+  background: #f0a020;
+  color: #000;
+}
+
+/* Overlays: Links unauffällig */
+.app a {
+  text-decoration: none;
+}
+
+/* Einheitliches Tabellendesign über alle Seiten.
+   Gilt generisch für jede <table> sowie die benannten Tabellen
+   (lp-table, dbg-table, es-haushalte). */
+table {
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  font-size: var(--fs-body);
+}
+th,
+td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #e8e8e8;
+  text-align: left;
+}
+thead th,
+table > tbody > tr:first-child th,
+tr > th {
+  font-size: var(--fs-table);
+  font-weight: 600;
+  color: #555;
+  background: #f0f0f0;
+  border-bottom: 1px solid #d8d8d8;
+  white-space: nowrap;
+}
+caption {
+  font-size: var(--fs-charttitle);
+  font-weight: 600;
+  color: #333;
+  padding: 0 0 10px;
+  caption-side: top;
+}
+/* Numerische Spalten rechtsbündig (ab der 2. Spalte) – nur für Tabellen,
+   die als numerisch markiert sind (Statistik, Drosselungen). Text-Tabellen
+   (Debug, Lastprofile, Abnehmer) bleiben linksbündig. */
+.num-table td:nth-of-type(n + 2) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Tabellengruppe (mehrere Tabellen nebeneinander). */
+.tables .table-group {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.tables .table-group > table {
+  margin: 0;
+}
+
+/* Toolbar (ersetzt die GET-Links für Aktionen) */
+.toolbar {
+  margin-top: 32px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: var(--fs-charttitle);
+}
+.toolbar button {
+  font-size: var(--fs-body);
+  padding: 6px 12px;
+  border: 1px solid #666;
+  background: #76b900;
+  color: #000;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.toolbar button:hover {
+  background: #8fd400;
+}
+.toolbar input {
+  font-size: var(--fs-body);
+  padding: 4px;
+}
+
+/* --- Navigationsmenü (dezent) --- */
+/* --- Top-Bar (Hamburger + Live-Anzeige), primär mobil --- */
+.topbar {
+  display: none; /* auf Desktop verborgen, Sidebar ist immer offen */
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  z-index: 60;
+}
+.hamburger {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  background: #f4f4f4;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.hamburger span {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: #444;
+}
+/* OFFIS-Logo in der Topbar: rechtsbündig, Höhe wie das Hamburger-Symbol (40px). */
+.topbar-logo {
+  height: 40px;
+  width: auto;
+  margin-left: auto;
+  display: block;
+}
+
+/* --- Sidebar --- */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: #fafafa;
+  border-right: 1px solid #e6e6e6;
+  display: flex;
+  flex-direction: column;
+  z-index: 70;
+  overflow-y: auto;
+  text-align: left;
+}
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+/* OFFIS-Logo im Sidebar-Kopf: direkt rechts neben dem Live-Indikator, Höhe wie
+   das Hamburger-Symbol (40px). margin-left:auto schiebt es an den rechten Rand. */
+.sidebar-logo {
+  height: 40px;
+  width: auto;
+  margin-left: auto;
+  display: block;
+}
+.sidebar-close {
+  display: none; /* nur mobil */
+  background: none;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  color: #666;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.sidebar-items {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-link {
+  display: block;
+  padding: 9px 14px;
+  border-radius: 8px;
+  color: #333;
+  font-size: var(--fs-nav);
+  transition: background 0.12s;
+}
+.sidebar-link:hover {
+  background: #eef5e0;
+}
+.sidebar-link.active {
+  background: #76b900;
+  color: #000;
+  font-weight: 600;
+}
+.sidebar-link.sub {
+  padding-left: 26px;
+  font-size: var(--fs-body);
+  color: #555;
+}
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  color: #333;
+  font-size: var(--fs-nav);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar-group-label:hover {
+  background: #eef5e0;
+}
+.sidebar-group-label.active {
+  color: #4a7500;
+  font-weight: 600;
+}
+.sidebar-group-label .caret {
+  font-size: 12px;
+  color: #888;
+  transition: transform 0.15s;
+}
+.sidebar-group-label .caret.up {
+  transform: rotate(180deg);
+}
+.sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px;
+}
+.sidebar-backdrop {
+  display: none; /* nur mobil, wenn offen */
+}
+
+/* --- Unterseiten --- */
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 16px 60px;
+}
+/* Auf der Stromverbrauchsseite folgen mehrere .page-Blöcke direkt aufeinander.
+   Ohne Korrektur summiert sich das große Bottom-Padding jedes Blocks zu einer
+   auffälligen Lücke – daher hier die Zwischenabstände vereinheitlichen. */
+.stromverbrauch-page { max-width: 900px; margin: 0 auto; padding: 16px; min-width: 0; }
+.page-maintitle { margin: 0 0 12px; padding: 0; }
+/* Alle Blöcke der Seite einheitlich voll breit innerhalb des begrenzten
+   Seitencontainers – die innere .page-Begrenzung (900px/zentriert) wird hier
+   neutralisiert, damit .page-, .tv-page- und .statistiken-page-Blöcke gleich
+   breit sind. */
+.stromverbrauch-page > .page,
+.stromverbrauch-page > .tv-page,
+.stromverbrauch-page > .statistiken-page {
+  max-width: none;
+  margin: 0 0 18px;
+  padding: 0;
+  min-width: 0;
+}
+.stromverbrauch-page > .page:last-child { margin-bottom: 0; }
+/* Karten dürfen nicht mit breiten Tabellen mitwachsen: Inhalt wird über den
+   .table-scroll-Wrapper scrollbar, die Karte behält die Blockbreite. */
+.stromverbrauch-page .card { min-width: 0; max-width: 100%; }
+/* Einheitliche Überschriften-Hierarchie über alle Seiten:
+   h2 = Seitentitel, h3 = Box-/Abschnittstitel, h4 = Unterüberschrift.
+   Alle Überschriften werden einheitlich zentriert. */
+.page h2,
+.stromverbrauch-page h2 {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  margin: 0 0 4px;
+  text-align: center;
+}
+.page h3 {
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.page h4 {
+  font-size: var(--fs-h4);
+  font-weight: 600;
+  color: #555;
+  margin: 14px 0 4px;
+  text-align: center;
+}
+/* Basis für alle Erklär-/Hinweistexte: feste Schriftgröße unabhängig vom
+   Container. Verhindert, dass sich die Größe verschiebt, wenn Blöcke umgebaut
+   werden und ein bestimmter Vorfahre (.page/.card) wegfällt. */
+.hint {
+  font-size: var(--fs-hint);
+  color: #777;
+}
+/* Einleitungstext direkt unter einer Überschrift: einheitlicher Abstand. */
+.page .hint {
+  font-size: var(--fs-hint);
+  color: #777;
+  margin: 0 0 16px;
+}
+.page table {
+  font-size: var(--fs-table);
+}
+
+/* Thematische Box ("Karte") – einheitlicher Container auf allen Seiten.
+   Vereinheitlicht die früheren Insel-Klassen (ek-section, es-section,
+   lp-section, dbg-section, tv-section). */
+.card,
+.ek-section,
+.es-section,
+.lp-section,
+.dbg-section,
+.tv-section {
+  text-align: left;
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #fafafa;
+}
+.card h3,
+.ek-section h3,
+.es-section h3,
+.lp-section h3,
+.dbg-section h3,
+.tv-section h3 {
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+/* Einleitungstext innerhalb einer Box: gleiche Schriftgröße und gleicher
+   Abstand wie auf Seitenebene – unabhängig davon, ob ein .page-Vorfahre
+   existiert (sonst würde die Größe beim Umbau von Containern verrutschen). */
+.card .hint,
+.ek-section .hint,
+.es-section .hint,
+.lp-section .hint,
+.dbg-section .hint,
+.tv-section .hint {
+  font-size: var(--fs-hint);
+  color: #777;
+  margin: 0 0 14px;
+}
+
+/* --- Statusseite: Ampelpunkte --- */
+.dot {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.dot.green {
+  background: #4caf50;
+  box-shadow: 0 0 4px #4caf50;
+}
+.dot.red {
+  background: #c0392b;
+  box-shadow: 0 0 4px #c0392b;
+}
+
+/* --- Einstellungsseite --- */
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+.setting-label {
+  width: 160px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.setting-control input {
+  font-size: var(--fs-body);
+  padding: 5px;
+}
+.setting-control button {
+  font-size: var(--fs-body);
+  padding: 6px 12px;
+  border: 1px solid #666;
+  background: #76b900;
+  color: #000;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.setting-control button:hover {
+  background: #8fd400;
+}
+.setting-control .current {
+  font-size: var(--fs-body);
+  color: #777;
+}
+
+/* --- Energiekosten-Seite --- */
+.ek-page { max-width: 900px; }
+.ek-saved { font-size: var(--fs-table); color: #76b900; font-weight: normal; }
+.ek-section {
+  text-align: left;
+  margin: 8px 0 22px;
+  padding: 14px 18px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #fafafa;
+}
+.ek-section h3 {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ek-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+.ek-row label {
+  flex: 1 1 auto;
+  min-width: 0; /* erlaubt Umbruch langer Labels, ohne den Input zu verdrängen */
+  font-size: var(--fs-body);
+}
+.ek-row input[type="text"],
+.ek-row input[type="number"],
+input.ek-input {
+  flex: 0 0 auto;
+  width: 110px;
+  padding: 5px 7px;
+  font-size: var(--fs-body);
+  text-align: right;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+.ek-unit {
+  flex: 0 0 auto;
+  width: 56px;
+  font-size: var(--fs-body);
+  color: #777;
+}
+/* Stromanbieter-Textfeld: linksbündig, breiter als die Zahlenfelder. */
+.ek-row input.ek-anbieter {
+  width: auto; flex: 1 1 auto; min-width: 0; text-align: left;
+}
+.ek-subhead {
+  margin: 14px 0 4px;
+  font-weight: bold;
+  font-size: var(--fs-body);
+  color: #555;
+  border-top: 1px solid #e2e2e2;
+  padding-top: 10px;
+}
+.ek-hint {
+  font-size: var(--fs-table);
+  color: #888;
+  margin: 2px 0 8px;
+}
+.ek-sum {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: #eef5e0;
+  border-radius: 6px;
+  font-size: var(--fs-body);
+}
+/* Fix/Dyn-Switch */
+.ek-switch {
+  display: inline-flex;
+  border: 1px solid #76b900;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ek-switch button {
+  border: none;
+  background: #fff;
+  color: #444;
+  padding: 6px 14px;
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+.ek-switch button.active {
+  background: #76b900;
+  color: #000;
+}
+/* §14a aktiv-Checkbox */
+.ek-toggle {
+  font-size: var(--fs-body);
+  font-weight: normal;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* ausgegrauter §14a-Bereich */
+.ek-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+/* Zeitfenster-Zeile */
+.ek-window {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-bottom: 1px dashed #e2e2e2;
+}
+.ek-window select,
+.ek-window input[type="time"] {
+  padding: 4px 6px;
+  font-size: var(--fs-body);
+}
+.ek-quarters {
+  display: inline-flex;
+  gap: 8px;
+}
+.ek-quarters label {
+  font-size: var(--fs-table);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ek-del {
+  border: none;
+  background: #d33;
+  color: #fff;
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+.ek-addwin {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+.ek-addwin button {
+  font-size: var(--fs-table);
+  padding: 5px 10px;
+  border: 1px solid #76b900;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* --- Spotpreis-Chart --- */
+.spot-chart {
+  margin-top: 18px;
+  border-top: 1px solid #e2e2e2;
+  padding-top: 14px;
+}
+.spot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.spot-title {
+  font-weight: bold;
+  font-size: var(--fs-charttitle);
+}
+.spot-reload {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-h4);
+  color: #76b900;
+  padding: 0 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.spot-reload:disabled {
+  color: #bbb;
+  cursor: default;
+}
+.spot-reload .spin {
+  display: inline-block;
+  animation: spot-spin 0.8s linear infinite;
+}
+@keyframes spot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spot-head input[type="date"] {
+  padding: 4px 8px;
+  font-size: var(--fs-body);
+}
+.spot-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.spot-switch button {
+  font-size: var(--fs-small);
+  padding: 5px 10px;
+}
+.spot-legend .leg-pos {
+  color: #4a8a2a;
+  font-weight: bold;
+}
+.spot-legend .leg-neg {
+  color: #e08000;
+  font-weight: bold;
+}
+
+/* --- Tagesverläufe-Seite --- */
+.tv-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+/* Achsenbeschriftung und -titel gelten für ALLE Chart-SVGs einheitlich (nicht
+   mehr pro SVG-Klasse gescoped) – so passt jedes neue Diagramm automatisch ins
+   Schriftgrößen-Raster und es entsteht kein Wildwuchs. */
+.tv-axis { font-size: var(--fs-axis); fill: #999; }
+.tv-axis-title { font-size: var(--fs-small); font-weight: 600; fill: #666; }
+.tv-dir { font-size: var(--fs-tiny); font-weight: bold; }
+
+/* Einheitlicher Seitenkopf: Titel zentriert, Steuerelemente zentriert darunter.
+   Vereinheitlicht die früheren es-head / tv-head. */
+.page-head,
+.es-head,
+.tv-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.page-head h2,
+.es-head h2,
+.tv-head h2 { margin: 0; }
+/* Steuerelemente-Zeile unter dem Titel (Datum/Monat/Aktionen). */
+.page-head-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head input[type="date"],
+.es-head input[type="date"],
+.tv-head input[type="date"] { padding: 5px 9px; font-size: var(--fs-body); }
+.es-haushalte { width: 100%; }
+
+/* Zusammengefasster Block: Kopf (Titel + Steuerung) am Anfang, darunter
+   mehrere Unterabschnitte untereinander mit etwas Abstand. */
+.block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+.block-head h3 { margin: 0; }
+.block-head-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.block-stack { display: flex; flex-direction: column; gap: 22px; }
+.block-sub > h4 { margin: 0 0 6px; font-size: var(--fs-h4); }
+.es-haushalte th,
+.es-haushalte td { text-align: left; }
+.es-haushalte tr.es-inactive td { opacity: 0.45; }
+/* Einheitliche Text-Legende unter Charts (auf allen Seiten gleich). */
+.es-legend,
+.ne-legend,
+.spot-legend,
+.chart-legend {
+  font-size: var(--fs-table);
+  color: #777;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.es-leg-green { color: #76b900; }
+.es-leg-grey { color: #9a9a9a; }
+.es-chartblock { margin-bottom: 18px; }
+/* Einheitlicher Chart-Titel mit optionaler Summe rechts (es + tv gleich). */
+.es-chart-title,
+.tv-title,
+.chart-title {
+  font-weight: 600;
+  font-size: var(--fs-charttitle);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.spk-kuerzel {
+  display: inline-block;
+  background: #2f6db0;
+  color: #fff;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin-right: 8px;
+  vertical-align: baseline;
+}
+.spk-grip {
+  cursor: grab;
+  color: #9aa4ad;
+  margin-right: 6px;
+  font-size: 15px;
+  user-select: none;
+}
+.spk-grip:active { cursor: grabbing; }
+.card.spk-dragging {
+  opacity: 0.6;
+  outline: 2px dashed #2f6db0;
+}
+.es-chart-sum,
+.tv-sum,
+.chart-sum { font-size: var(--fs-table); font-weight: normal; color: #777; }
+.es-svg { width: 100%; height: auto; display: block; }
+.es-svg .es-axis { font-size: var(--fs-axis); fill: #999; }
+.es-add {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.es-add button {
+  font-size: var(--fs-table);
+  padding: 5px 12px;
+  border: 1px solid #76b900;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.es-add button:disabled { opacity: 0.5; cursor: default; }
+.es-quotsum { font-size: var(--fs-table); color: #777; }
+.es-quotsum.over { color: #c0392b; font-weight: bold; }
+
+/* --- Chart-Tooltips --- */
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.chart-hover-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.chart-hover-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.chart-tooltip {
+  position: absolute;
+  /* Vertikale Position wird per tooltipTop-Prop gesetzt (je Chart unterschiedlich,
+     abhängig davon, wie viel Inhalt über dem SVG steht). */
+  transform: translateX(-50%);
+  background: rgba(30, 30, 30, 0.92);
+  color: #fff;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.chart-tooltip-time {
+  font-weight: bold;
+  margin-bottom: 3px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  padding-bottom: 2px;
+}
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-tooltip-label {
+  opacity: 0.85;
+}
+.chart-tooltip-value {
+  margin-left: auto;
+  font-weight: bold;
+  padding-left: 10px;
+}
+.chart-tooltip-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.es-haushalte input, .es-haushalte select { font-size: var(--fs-body); padding: 3px 5px; }
+/* §42c-Eingabefelder im Kosten-Stil, aber schmaler für die Tabelle. */
+.es-haushalte td { /* Größe kommt aus einheitlicher Tabellen-Basis */ }
+input.ek-input.es-input-sm { width: 76px; padding: 4px 6px; font-size: var(--fs-body); }
+.spot-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.spot-svg .bar-pos {
+  fill: #6aa84f;
+}
+.spot-svg .bar-neg {
+  fill: #e69138;
+}
+.spot-svg .spot-axis {
+  font-size: var(--fs-axis);
+  fill: #999;
+}
+
+/* --- Netzentgelt-Quartalsvisualisierung --- */
+.ne-chart {
+  margin-top: 16px;
+  border-top: 1px dashed #e2e2e2;
+  padding-top: 12px;
+}
+.ne-title {
+  font-weight: bold;
+  font-size: var(--fs-body);
+  margin-bottom: 6px;
+}
+.ne-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.ne-svg .ne-area {
+  fill: #e69138;
+  stroke: #cc7a1f;
+  stroke-width: 1;
+}
+.ne-svg .ne-qlabel {
+  font-size: var(--fs-small);
+  fill: #555;
+  font-weight: bold;
+}
+.ne-svg .ne-axis {
+  font-size: var(--fs-axis);
+  fill: #999;
+}
+.ne-svg .ne-tick {
+  font-size: var(--fs-axis);
+  fill: #888;
+}
+
+/* Monatssummen-Zeile in den Tagesstatistiken */
+.month-sum td {
+  background: #dff0c0 !important;
+  border-top: 2px solid #76b900;
+  border-bottom: 2px solid #76b900;
+  font-weight: bold;
+}
+
+/* --- Responsive Skalierung des Diagramms --- */
+/* Der innere Block bleibt fix 800px (Overlays sitzen pixelgenau).
+   Die Skalierung (transform:scale) setzt die Diagram-Komponente per JS
+   anhand der gemessenen Containerbreite. Der Scaler kappt den Überlauf
+   und bekommt seine Höhe ebenfalls per JS gesetzt. */
+.diagram-scaler {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  overflow: hidden;
+  /* Höhe deterministisch über Seitenverhältnis reservieren, damit
+     nachfolgende Elemente (Verbraucher-Tabelle) nie überlappen –
+     unabhängig davon, wann/ob JS die Höhe misst. Verhältnis = SVG-Bild
+     (viewBox 2240 x 2630), das die Höhe des Diagramms bestimmt. */
+  aspect-ratio: 2240 / 2630;
+}
+/* Das Übersichts-Diagramm hat eine feste innere Auslegung; seine Texte laufen
+   über inline-Größen bzw. erben die frühere globale Basis. Damit die neue
+   .content-Basis (14px) die Übersicht NICHT verändert, wird hier die ursprünglich
+   geerbte Größe explizit wiederhergestellt. */
+.diagram-inner {
+  font-size: var(--fs-diagram-text);
+}
+
+
+/* --- Statusseite: Quellen als Karten --- */
+.source-list {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: left;
+}
+.source-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  background: #fff;
+}
+.source-card.disabled {
+  opacity: 0.45;
+  background: #f5f5f5;
+}
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.source-name {
+  font-weight: bold;
+  color: #333;
+  font-size: 13.5px;
+}
+.source-meta {
+  font-size: var(--fs-table);
+  color: #888;
+}
+.source-error {
+  margin-top: 6px;
+  font-size: var(--fs-table);
+  color: #c0392b;
+}
+/* Variablen eingerückt unter der Quelle */
+.source-values {
+  margin-top: 8px;
+  padding-left: 23px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: var(--fs-body);
+  color: #444;
+}
+.source-value b {
+  color: #222;
+}
+.dot.gray {
+  background: #aaa;
+  box-shadow: none;
+}
+
+/* --- Quellen-Editor --- */
+.src-editor { max-width: 900px; margin: 0 auto; text-align: left; }
+/* Kompakte Schnellauswahl aller Quellen oben auf der Seite. */
+.src-jumplist {
+  max-width: 900px;
+  margin: 0 auto 18px;
+  padding: 12px 14px;
+  background: #f4f7fb;
+  border: 1px solid #dde5ef;
+  border-radius: 10px;
+  text-align: left;
+}
+.src-jumplist-title { font-size: var(--fs-table); color: #556; margin-bottom: 8px; }
+.src-jumplist-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 4px 10px;
+  background: #fff;
+  border: 1px solid #cbd6e4;
+  border-radius: 999px;
+  font-size: var(--fs-table);
+  color: #234;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.src-chip:hover { background: #e8f0fb; border-color: #7dabe0; }
+.src-chip-icon { font-size: 14px; line-height: 1; }
+.src-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-chip-off { opacity: 0.5; }
+.src-chip-off .src-chip-label { text-decoration: line-through; }
+/* Kurzes Hervorheben der angesprungenen Box. */
+.src-box-highlight {
+  animation: srcHighlight 1.6s ease-out;
+}
+@keyframes srcHighlight {
+  0% { box-shadow: 0 0 0 3px #76b90066; background: #f0f7e6; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.src-box {
+  border: 1px solid #ccc; border-radius: 8px; padding: 14px;
+  margin-bottom: 16px; background: #fff;
+}
+.src-box.src-off { opacity: 0.55; background: #f5f5f5; }
+.src-row1 { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.src-label { font-weight: bold; font-size: var(--fs-h4); flex: 1; padding: 4px 6px; }
+.src-enabled { font-size: var(--fs-body); white-space: nowrap; }
+.src-del {
+  background: #c0392b; color: #fff; border: none; border-radius: 5px;
+  padding: 4px 10px; cursor: pointer; font-size: 13px;
+}
+.src-grid {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px 10px;
+  align-items: center; margin-bottom: 12px;
+}
+.src-grid label { font-size: var(--fs-table); color: #555; text-align: right; }
+.src-grid input, .src-grid select { padding: 4px 6px; font-size: var(--fs-body); min-width: 0; width: 100%; box-sizing: border-box; }
+
+/* Einheitlicher Block (über alle Rollen gleich): Icon volle Breite, darunter
+   Intervall/Timeout fest nebeneinander. */
+.src-fixed { margin-bottom: 12px; }
+.src-fixed-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.src-fixed-row > label { font-size: var(--fs-table); color: #555; min-width: 64px; text-align: left; }
+.src-fixed-row > :last-child { flex: 0 1 auto; min-width: 0; }
+.src-fixed-times { display: flex; gap: 18px; flex-wrap: wrap; }
+.src-time-field { display: flex; align-items: center; gap: 8px; }
+.src-time-field label { font-size: var(--fs-table); color: #555; }
+.src-time-field input { padding: 4px 6px; font-size: var(--fs-body); width: 100px; }
+.src-fields { border-top: 1px solid #eee; padding-top: 10px; }
+.src-fields-head { font-size: var(--fs-table); color: #555; margin-bottom: 6px; }
+.src-fields table { width: 100%; }
+/* Kompakte Feldtabelle: geringes Zell-Padding; Felder füllen ihre Spalte aus,
+   damit kein Leerraum zwischen den Eingaben entsteht. Festes Layout verteilt
+   die Breite auf die Spalten statt auf Zwischenräume. */
+.src-field-table { table-layout: fixed; }
+.src-field-table th,
+.src-field-table td {
+  padding: 3px 4px;
+  border-bottom: 1px solid #eee;
+}
+.src-fields th { font-size: var(--fs-small); background: #eee; color: #333; font-weight: normal; white-space: nowrap; }
+.src-fields td { font-size: var(--fs-table); background: #fafafa; }
+.src-fields input, .src-fields select { padding: 3px 5px; font-size: var(--fs-table); box-sizing: border-box; width: 100%; min-width: 0; }
+/* Spaltenbreiten der Feldtabelle (Summe ~100%): Größe, JSON-Pfad (breit),
+   Label, Einheit (schmal), Typ, Faktor (schmal), Aktion. */
+.src-field-table col.c-metric { width: 15%; }
+.src-field-table col.c-path   { width: 23%; }
+.src-field-table col.c-label  { width: 28%; }
+.src-field-table col.c-unit   { width: 7%; }
+.src-field-table col.c-type   { width: 12%; }
+.src-field-table col.c-factor { width: 9%; }
+.src-field-table col.c-act    { width: 6%; }
+.src-fdel {
+  background: none; border: none; color: #c0392b; font-size: 18px;
+  cursor: pointer; padding: 0 4px; line-height: 1;
+}
+.src-testval { color: #2e7d32; font-size: var(--fs-small); margin-right: 6px; }
+.src-field-actions { margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+.src-actions {
+  max-width: 760px; margin: 20px auto; display: flex; gap: 14px; align-items: center;
+}
+.src-actions .src-save, .src-actions .ie-primary { margin-left: auto; }
+/* Einheitlicher Primär-Speichern-Button (grün) auf allen Seiten. */
+.src-save, .ie-primary {
+  padding: 8px 16px; background: #76b900; color: #fff; border: none;
+  border-radius: 6px; cursor: pointer; font-size: var(--fs-body); font-weight: 600;
+}
+.src-save:hover:not(:disabled), .ie-primary:hover:not(:disabled) { background: #6aa600; }
+.src-save:disabled, .ie-primary:disabled { opacity: 0.5; cursor: default; }
+.src-testok { color: #2e7d32; font-size: var(--fs-body); }
+.src-dirty { color: #c77800; font-size: var(--fs-table); }
+.src-testerr { color: #c0392b; font-size: var(--fs-table); }
+
+/* --- Verbraucher-Tabelle unter dem Diagramm --- */
+.consumer-table {
+  width: 100%; margin: 0; font-size: var(--fs-body);
+}
+.consumer-table table { width: 100%; border-collapse: collapse; }
+.consumer-table th {
+  text-align: center; font-size: var(--fs-table); font-weight: normal; color: #666;
+  background: none; border: none; border-bottom: 1px solid #eee; padding: 6px 10px;
+}
+.consumer-table th:first-child { text-align: left; }
+.consumer-table td {
+  background: none; background-image: none; border: none;
+  border-bottom: 1px solid #f2f2f2; padding: 7px 10px;
+}
+.consumer-table tr:last-child td { border-bottom: 1px solid #f2f2f2; }
+.consumer-table .consumer-off td { opacity: 0.45; }
+.consumer-table a { text-decoration: none; }
+
+/* --- Korrektur-Editor (virtuelle Verbraucher) --- */
+.src-corrections { border-top: 1px solid #eee; margin-top: 10px; padding-top: 10px; }
+.src-corr-empty { font-size: var(--fs-small); color: #888; margin-bottom: 6px; }
+.src-corr-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.src-corr-row select { padding: 3px 5px; font-size: var(--fs-table); }
+
+/* --- Statusseite: Rollen-Gruppen --- */
+.status-group { margin-bottom: 18px; }
+.status-group-title {
+  font-size: var(--fs-h3); font-weight: 600; color: #444; text-align: left;
+  max-width: 760px; margin: 0 auto 6px; padding-left: 4px;
+  border-bottom: 1px solid #ddd;
+}
+
+/* --- Verbraucher-Tabelle: Raum-Gruppen --- */
+.consumer-table .room-header td {
+  background: #f6f9f0; color: #333; font-size: var(--fs-table); font-weight: 600;
+  border-top: 1px solid #eee; border-bottom: 1px solid #eee;
+}
+
+
+/* === Mobile Anpassungen ans Dateiende verschoben, damit sie die
+   Basis-Regeln zuverlässig überschreiben (CSS-Kaskade nach Reihenfolge) === */
+/* --- Allgemeine Mobil-Anpassungen --- */
+@media (max-width: 800px) {
+  html {
+    font-size: var(--fs-h3);
+  }
+  /* Kostenseite: Eingabefelder rechtsbündig und gleich breit halten. Ohne
+     feste Breite und flex-Fixierung "flattern" die Inputs bei langen Labels,
+     weil das Label umbricht. Wir halten Input + Einheit als feste rechte
+     Spalte, das Label schrumpft davor. */
+  .ek-row {
+    flex-wrap: nowrap;
+  }
+  .ek-row label {
+    font-size: var(--fs-body);
+    line-height: 1.25;
+  }
+  .ek-row input[type="text"],
+  .ek-row input[type="number"],
+  input.ek-input {
+    width: 92px;
+    font-size: var(--fs-body);
+  }
+  .ek-unit {
+    width: 52px;
+    font-size: var(--fs-table);
+    text-align: left;
+  }
+  /* Seiten und Tabellen-Wrapper: volle Breite, kein fixes 800 */
+  .tables,
+  .page {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 8px;
+    padding-right: 8px;
+    box-sizing: border-box;
+  }
+  /* Untere Tabellengruppe (.tables: Drosselungen, Smart-Home-Links):
+     kompakter, bei Bedarf horizontal scrollbar. Die .page-Tabellen
+     (Statistiken, Quellen) werden weiter unten gezielt geregelt. */
+  .tables table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tables th,
+  .tables td {
+    font-size: var(--fs-table);
+    padding: 0.25em 0.4em;
+    white-space: nowrap;
+  }
+  /* Die untere Tabellengruppe untereinander statt nebeneinander */
+  .tables .table-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Verbraucher-Tabelle unter dem Diagramm: deutlich kompakter, damit
+     alle Spalten (inkl. Status) ohne Scrollen passen. Kein nowrap, keine
+     eigene Scroll-Box. */
+  .consumer-table { max-width: 100%; }
+  .consumer-table table { width: 100%; }
+  .consumer-table th,
+  .consumer-table td {
+    padding: 2px 5px;
+    white-space: normal;
+  }
+
+  /* Tagesstatistiken: 7 Spalten ohne Querscrollen. Tabelle als normales
+     Table-Layout (nicht block/scroll), Schrift klein, Umbruch erlaubt,
+     Padding minimal. */
+  /* Tabellen werden auf Mobil NICHT mehr gestaucht oder verkleinert. Sie nutzen
+     – wie auf dem Desktop – den .table-scroll-Wrapper (volle Blockbreite, bei
+     Bedarf horizontal scrollbar) und die einheitliche Schriftgröße. Keine
+     mobile-spezifische Tabellengröße mehr, damit alle Tabellen konsistent sind. */
+  /* Quellen-/Senken-Editor: zweispaltiges Label/Feld-Grid auf Mobil einspaltig
+     stapeln (Label über Feld), damit das Eingabefeld die volle Breite nutzt und
+     nicht von langen Beschreibungstexten zusammengedrückt wird. */
+  .src-grid {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+  .src-grid label {
+    text-align: left;
+    margin-top: 6px;
+  }
+  .src-grid input,
+  .src-grid select {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* Kopfzeile der Quelle: Name volle Breite, aktiv + löschen darunter */
+  .src-row1 { flex-wrap: wrap; gap: 8px; }
+  .src-label { flex: 1 1 100%; }
+  /* JSON-Pfad-Tabelle darf weiterhin horizontal scrollen (bewusst). */
+  .src-fields table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .src-fields th,
+  .src-fields td { white-space: nowrap; }
+  /* --- Mobil: Sidebar als Overlay, per Hamburger --- */
+  .topbar {
+    display: flex;
+  }
+  .content {
+    margin-left: 0; /* Sidebar überdeckt nicht mehr, sondern schiebt sich drüber */
+    padding-top: 8px;
+  }
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.18);
+    width: min(82vw, 300px);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-close {
+    display: inline-block;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 65;
+  }
+  /* Einstellungs-Zeilen umbrechen statt überlaufen */
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .setting-label {
+    width: auto;
+  }
+}
+
+/* Hinweis bei H25-Simulator-Quelle im Quelleneditor */
+.src-cert {
+  grid-column: 1 / -1;
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--fs-small);
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.src-hint {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  font-size: var(--fs-small);
+  color: #778;
+}
+.src-label-full {
+  grid-column: 1 / -1;
+  text-align: left !important;
+  margin-top: 4px;
+}
+.src-check-full {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-body);
+  text-align: left;
+  margin-top: 2px;
+  box-sizing: border-box;
+}
+.src-check-full input {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.src-check-full span { flex: 1 1 auto; }
+.src-hint code {
+  background: #eef; padding: 1px 4px; border-radius: 3px; font-size: var(--fs-tiny);
+}
+.src-hint-h25 {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  background: #eef5e0;
+  border-left: 3px solid #76b900;
+  border-radius: 4px;
+  font-size: var(--fs-table);
+  line-height: 1.5;
+  color: #444;
+}
+
+/* Senken-Seite */
+.sink-url {
+  margin-top: 8px;
+  font-size: var(--fs-table);
+  color: #555;
+}
+.sink-url-label { margin-right: 6px; }
+.sink-url code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.sink-live {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #eef5e0;
+  border-radius: 4px;
+  font-size: var(--fs-table);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sink-live-out strong { font-size: var(--fs-body); color: #2d6a00; }
+.sink-live-detail { color: #666; }
+
+/* Lastprofil-Seite */
+/* lp-table nutzt jetzt das data-table + table-scroll Template (wie die
+   Tagesübersichten auf der Stromverbrauchsseite). Nur noch profil-spezifische
+   Feinheiten hier – die aktive Zeile und der Link. Keine eigenen Spaltenbreiten
+   mehr, damit auf schmalen Screens der scrollbare Wrapper greift statt Spalten
+   über die Karte hinauszuragen. */
+.lp-table tr.lp-active td { background: #eef5e0; }
+.lp-link { background: none; border: none; color: #2d6a00; cursor: pointer; font-size: var(--fs-body); padding: 0; text-decoration: underline; }
+.lp-controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.lp-controls label { font-size: var(--fs-body); }
+.lp-daymeta { font-size: var(--fs-body); color: #444; margin-bottom: 6px; }
+.lp-spec { background: #f7f9f2; border: 1px solid #e0e8d0; border-radius: 6px; padding: 12px 16px; font-size: var(--fs-table); line-height: 1.55; margin-bottom: 12px; }
+.lp-spec ul { margin: 6px 0 8px; padding-left: 20px; }
+.lp-spec code { background: #e8eddd; padding: 1px 5px; border-radius: 3px; font-size: 12.5px; }
+.lp-template-link { font-size: var(--fs-table); }
+.lp-upload { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: var(--fs-body); }
+.lp-upload label { font-size: var(--fs-body); display: inline-flex; align-items: center; gap: 6px; }
+.lp-upload input[type="text"] { font-size: var(--fs-body); padding: 5px 7px; border: 1px solid #ccc; border-radius: 5px; }
+.lp-upload input[type="file"] { font-size: var(--fs-table); }
+.lp-msg-ok { margin-top: 8px; color: #2d6a00; font-size: var(--fs-body); }
+.lp-msg-err { margin-top: 8px; color: #b00020; font-size: var(--fs-body); }
+
+/* Debug-Seite */
+.dbg-controls { margin: 14px 0; }
+.dbg-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.dbg-row label { font-size: var(--fs-body); }
+.dbg-auto { font-size: var(--fs-table); }
+.dbg-badges { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.dbg-badge { font-size: var(--fs-badge); border: 1px solid #ccc; border-radius: 12px; padding: 2px 10px; display: inline-flex; align-items: center; gap: 6px; }
+.dbg-badge i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dbg-table { width: 100%; }
+.dbg-table td { vertical-align: top; }
+.dbg-table th { position: sticky; top: 0; }
+.dbg-ts { white-space: nowrap; color: #666; font-variant-numeric: tabular-nums; }
+.dbg-level { font-weight: 600; text-transform: uppercase; font-size: 11.5px; }
+.dbg-src { color: #444; white-space: nowrap; }
+.dbg-msg { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-word; }
+
+/* Icon-Auswahl im Quelleneditor */
+.src-icon-picker { display: flex; flex-wrap: wrap; gap: 4px; }
+.src-icon-opt {
+  width: 32px; height: 32px; font-size: 17px; line-height: 1;
+  border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.src-icon-opt:hover { border-color: #76b900; }
+.src-icon-opt.sel { border-color: #76b900; background: #eef5e0; box-shadow: 0 0 0 1px #76b900 inset; }
+/* Icon vor dem Quellennamen auf der Statusseite */
+.source-icon { font-size: 15px; margin-right: 2px; }
+
+/* Durchsuchbarer Icon-Picker */
+.icon-picker { position: relative; }
+.icon-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
+}
+.icon-more {
+  font-size: 13px; border: 1px solid #ccc; border-radius: 6px; background: #f5f5f5;
+  padding: 4px 10px; cursor: pointer; height: 32px;
+}
+.icon-more:hover { border-color: #76b900; }
+.icon-popover {
+  position: absolute; z-index: 50; top: 38px; left: 0;
+  width: 340px; max-width: 90vw; background: #fff; border: 1px solid #bbb;
+  border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px;
+}
+.icon-search { width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 8px;
+  border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+.icon-grid { display: flex; flex-wrap: wrap; gap: 4px; max-height: 260px; overflow-y: auto; }
+.icon-empty { color: #888; font-size: 13px; padding: 8px; }
+
+/* Visualisierungs-Seite */
+.viz-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; width: 100%; }
+.viz-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; }
+.viz-color { width: 44px; height: 34px; border: 1px solid #ccc; border-radius: 6px; padding: 0; cursor: pointer; background: none; }
+.viz-text { flex: 1; }
+.viz-label { font-weight: 600; font-size: var(--fs-body); }
+.viz-hint { font-size: var(--fs-small); color: #777; }
+.viz-swatch { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #ccc; }
+.viz-code { font-size: var(--fs-small); color: #555; width: 64px; text-align: right; }
+.viz-actions { display: flex; align-items: center; gap: 14px; margin-top: 8px; margin-bottom: 28px; }
+.viz-saved { color: #2d6a00; font-size: var(--fs-body); }
+
+/* Kosten-Zelle mit Tooltip (Bestandteile beim Hovern) */
+.kosten-cell { cursor: help; }
+.einsparung-cell { cursor: help; }
+
+/* --- Stromabrechnung (periodenweite Kostenaufstellung) --- */
+.abr-range { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0 14px; }
+.abr-range label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); }
+.abr-range input { padding: 5px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-body); }
+.abr-table { max-width: 480px; width: 100%; margin-left: auto; margin-right: auto; }
+.abr-table .abr-label { text-align: left; font-size: var(--fs-table); }
+.abr-table .abr-value { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.abr-hint { display: block; color: #999; font-size: var(--fs-small); font-weight: normal; }
+.abr-table tr.abr-sum-row td { border-top: 1px solid #e5e5e5; }
+.abr-table tfoot tr.abr-total td { border-top: 2px solid #b8c8dd; background: #eef3f9; font-weight: 700; font-size: var(--fs-table); }
+.abr-meta { font-size: var(--fs-table); color: #667; margin: 8px auto 0; max-width: 480px; }
+.abr-einsparung { margin: 14px auto 0; padding: 10px 12px; background: #eef7ee; border-radius: 6px; font-size: var(--fs-body); color: #2e5e34; max-width: 480px; }
+/* Detailzeilen unter einer Abrechnungsposition (kWh/Arbeitspreis, Periodensplit) */
+.abr-detail-row td.abr-detail { padding: 2px 10px 8px 10px; border-top: none; font-size: var(--fs-small); color: #778; text-align: left; }
+.abr-split { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-small); }
+.abr-split-head { color: #99a; margin-bottom: 2px; font-size: var(--fs-small); }
+.abr-split-row { display: flex; justify-content: space-between; gap: 12px; }
+.abr-split-label { color: #778; }
+.abr-split-val { font-variant-numeric: tabular-nums; white-space: nowrap; color: #556; }
+.abr-es-split { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 3px; }
+.abr-es-row { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-table); }
+.abr-es-row span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.abr-es-hint { font-size: var(--fs-small); color: #6a8a70; margin-top: 6px; }
+/* --- Tarifvergleich Fix vs. Dyn --- */
+.vgl-table { max-width: 620px; }
+.vgl-table th { text-align: right; }
+.vgl-table th:first-child { text-align: left; }
+.vgl-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vgl-table tfoot tr.vgl-sum td { border-top: 2px solid #b8c8dd; background: #eef3f9; font-weight: 700; }
+.vgl-table tfoot tr.vgl-sum td:first-child { text-align: left; }
+
+/* Energiekosten: nur-Lese-Wert (z.B. übernommener Standardlasttarif) */
+.ek-readonly {
+  display: inline-block;
+  min-width: 80px;
+  width: 110px;
+  padding: 5px 7px;
+  box-sizing: border-box;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  color: #555;
+  font-size: var(--fs-body);
+  text-align: right;
+}
+
+/* Lastprofil: Vorlagen-Download-Links */
+.lp-templates { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.lp-templates > span { color: #666; font-size: var(--fs-body); }
+
+/* Datums-Schnellnavigation (Vortag/Folgetag) für Tagescharts */
+.datenav { display: inline-flex; align-items: center; gap: 6px; }
+.datenav-label { font-size: var(--fs-body); color: #555; }
+.datenav-arrow {
+  border: 1px solid #cfcfcf;
+  background: #f4f4f4;
+  color: #333;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.datenav-arrow:hover:not(:disabled) { background: #76b900; color: #fff; border-color: #76b900; }
+.datenav-arrow:disabled { opacity: 0.35; cursor: default; }
+
+/* Gruppenüberschriften in der Statistik-Tagesübersicht (zweizeiliger Header) */
+.num-table thead th.grp {
+  text-align: center;
+  border-left: 1px solid #d8d8d8;
+  border-right: 1px solid #d8d8d8;
+  border-bottom: 1px solid #d8d8d8;
+  background: #e8e8e8;
+}
+.num-table thead tr:first-child th {
+  border-bottom: 1px solid #d8d8d8;
+}
+
+/* Klickbare Verbraucher-Zeilen (Tagesverlauf) */
+.consumer-table .consumer-row:hover { background: #f0f7e6; }
+.consumer-icon { display: inline-block; }
+
+/* --- Wärmepumpe: Datenreihen-Auswahl --- */
+/* wp-series-table nutzt jetzt das data-table + table-scroll Template (wie andere
+   Tabellen der App). Nur noch die spezifischen Elemente hier – keine eigenen
+   Spaltenbreiten/Paddings mehr, damit auf schmalen Screens der scrollbare Wrapper
+   greift statt die Spalten übereinanderzustauchen. */
+.wp-series-table td:first-child { text-align: left; white-space: nowrap; }
+.wp-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.wp-nodata { opacity: 0.5; }
+.wp-nodata-hint { font-size: var(--fs-small); color: #999; }
+.wp-axis-switch {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.wp-axis-switch button {
+  border: none;
+  background: #f6f6f6;
+  padding: 4px 12px;
+  font-size: var(--fs-table);
+  cursor: pointer;
+  color: #555;
+}
+.wp-axis-switch button.active {
+  background: #76b900;
+  color: #000;
+  font-weight: 600;
+}
+.wp-chart { width: 100%; height: auto; }
+
+/* Mobile: kompaktere Datenreihen-Tabelle (niedrigere Zeilen) */
+@media (max-width: 640px) {
+  .wp-series-table th,
+  .wp-series-table td {
+    padding: 4px 5px;
+    font-size: var(--fs-small);
+  }
+  .wp-series-table th { white-space: nowrap; }
+  .wp-series-table td:first-child { line-height: 1.2; word-break: break-word; }
+  .wp-swatch { width: 10px; height: 10px; margin-right: 5px; }
+  .wp-nodata-hint { display: block; margin-left: 15px; font-size: var(--fs-tiny); }
+  .wp-axis-switch button { padding: 3px 8px; font-size: var(--fs-small); }
+}
+
+/* --- Wärmepumpe: Chart-Tooltip + Zoom --- */
+.wp-chart-wrap {
+  position: relative;
+  width: 100%;
+}
+.wp-tooltip {
+  position: absolute;
+  top: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: var(--fs-small);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  min-width: 150px;
+  z-index: 5;
+}
+.wp-tooltip-time {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #333;
+}
+.wp-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+.wp-tooltip-label {
+  flex: 1;
+  color: #555;
+  white-space: nowrap;
+}
+.wp-tooltip-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #222;
+}
+.wp-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: var(--fs-body);
+}
+.wp-zoom-label { color: #666; }
+.wp-zoom input[type="time"] {
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: var(--fs-body);
+}
+.wp-zoom-presets {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: 6px;
+}
+.wp-zoom-presets button {
+  border: 1px solid #ccc;
+  background: #f6f6f6;
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: var(--fs-table);
+  cursor: pointer;
+  color: #555;
+}
+.wp-zoom-presets button:hover {
+  background: #ececec;
+}
+
+/* --- Energy-Sharing-Wirtschaftlichkeitsanalyse --- */
+.sa-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+.sa-card {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafafa;
+}
+.sa-card-accent {
+  background: #f0f7e6;
+  border-color: #cfe4a8;
+}
+.sa-card-label {
+  font-size: var(--fs-small);
+  color: #777;
+  margin-bottom: 4px;
+}
+.sa-card-value {
+  font-size: var(--fs-kpi);
+  font-weight: 700;
+  color: #222;
+  font-variant-numeric: tabular-nums;
+}
+.sa-card-sub {
+  font-size: var(--fs-small);
+  color: #4a7a1e;
+  margin-top: 2px;
+  font-weight: 600;
+}
+.sa-gran {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.sa-gran button {
+  border: none;
+  background: #f6f6f6;
+  padding: 6px 16px;
+  font-size: var(--fs-body);
+  cursor: pointer;
+  color: #555;
+  border-right: 1px solid #ddd;
+}
+.sa-gran button:last-child { border-right: none; }
+.sa-gran button.active {
+  background: #76b900;
+  color: #000;
+  font-weight: 600;
+}
+.sa-legend {
+  display: flex;
+  gap: 18px;
+  font-size: var(--fs-table);
+  color: #555;
+  margin-bottom: 6px;
+}
+.sa-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.sa-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: var(--fs-body);
+}
+.sa-table th {
+  text-align: right;
+  font-size: var(--fs-table);
+  color: #666;
+  padding: 6px 10px;
+  border-bottom: 1px solid #eee;
+}
+.sa-table th:first-child { text-align: left; }
+.sa-table td {
+  text-align: right;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f2f2f2;
+  font-variant-numeric: tabular-nums;
+}
+.sa-pos { color: #2d7a00; font-weight: 600; }
+.sa-neg { color: #c0152f; font-weight: 600; }
+
+/* Default-Icon-Vorschau in der Standard-Schaltfläche des IconPickers */
+.icon-default-preview {
+  opacity: 0.55;
+  filter: grayscale(0.3);
+}
+
+/* --- Hilfe-Seiten: Erklärtexte einheitlich zu .hint (14px) auf anderen Seiten --- */
+.hilfe-page .card p {
+  font-size: var(--fs-hint);
+  color: #555;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.hilfe-page .card h3 {
+  margin-top: 0;
+}
+.hilfe-page .card p + p {
+  margin-top: 12px;
+}
+.hilfe-page .hilfe-list {
+  font-size: var(--fs-hint);
+  color: #555;
+  line-height: 1.6;
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.hilfe-page .hilfe-list li {
+  margin: 5px 0;
+}
+.hilfe-page code {
+  background: #f0f0f0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: var(--fs-table);
+}
+.hilfe-page .card a {
+  color: #2d6a00;
+  text-decoration: underline;
+}
+.hilfe-page .card em {
+  font-style: normal;
+  font-weight: 600;
+  color: #333;
+}
+
+/* --- Börsenstrompreis-Seite --- */
+.bs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
+  margin: 14px 0 20px;
+}
+.bs-card {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafafa;
+}
+.bs-card-accent {
+  background: #fbeaec;
+  border-color: #e6b3bb;
+}
+.bs-label {
+  font-size: var(--fs-small);
+  color: #777;
+  margin-bottom: 4px;
+}
+.bs-value {
+  font-size: var(--fs-kpi);
+  font-weight: 700;
+  color: #222;
+  font-variant-numeric: tabular-nums;
+}
+.bs-unit {
+  font-size: var(--fs-table);
+  font-weight: 400;
+  color: #888;
+}
+.bs-sub {
+  font-size: var(--fs-small);
+  color: #999;
+  margin-top: 2px;
+}
+.bs-heatmap-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.bs-heatmap-cal {
+  width: 100%;
+  display: block;
+}
+.bs-hm-axis {
+  font-size: var(--fs-axis);
+  fill: #888;
+}
+
+/* Zusammenhängender Unterblock auf Hilfeseiten (z.B. §14a Modul 3):
+   optisch als EIN Thema gruppiert, nicht als mehrere gleichrangige Absätze. */
+.hilfe-page .hilfe-subblock {
+  border-left: 3px solid #d9e2c4;
+  background: #fafbf6;
+  padding: 8px 14px;
+  margin: 12px 0;
+  border-radius: 0 6px 6px 0;
+}
+.hilfe-page .hilfe-subblock-title {
+  font-size: var(--fs-hint);
+  font-weight: 600;
+  color: #4a6b16;
+  margin: 4px 0 6px;
+}
+.hilfe-page .hilfe-subblock p {
+  margin: 6px 0;
+}
+.hilfe-page .hilfe-hinweis {
+  font-size: 12.5px;
+  color: #7a6a3a;
+  background: #fbf6e6;
+  border-left: 3px solid #d9c27a;
+  padding: 6px 10px;
+  border-radius: 0 5px 5px 0;
+  margin: 8px 0 2px;
+}
+
+/* --- Chart-Toolbar: Legende (Datenreihen aus-/einblenden) + Einheiten-Switch --- */
+.chart-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  /* Über der transparenten Hover-Ebene liegen, damit Klicks auf die Legende
+     und den Einheiten-Switch ankommen (die Hover-Spalten überdecken sonst den
+     oberen Bereich des Chart-Wrappers und fangen die Klicks ab). */
+  position: relative;
+  z-index: 2;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 12.5px;
+  color: #444;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.chart-legend-item:hover {
+  background: #f2f2f2;
+}
+.chart-legend-item.off {
+  color: #bbb;
+  text-decoration: line-through;
+}
+.chart-legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.chart-legend-item.off .chart-legend-dot {
+  opacity: 0.3;
+}
+.chart-unit-switch {
+  display: inline-flex;
+  border: 1px solid #76b900;
+  border-radius: 6px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: flex-start;
+}
+.chart-unit-switch button {
+  border: none;
+  background: #fff;
+  color: #444;
+  padding: 4px 12px;
+  font-size: var(--fs-table);
+  cursor: pointer;
+}
+.chart-unit-switch button.active {
+  background: #76b900;
+  color: #000;
+}
+
+/* --- Debug: Protokoll-Kopf mit Quellen-Filter --- */
+.dbg-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.dbg-log-head h3 { margin: 0; }
+.dbg-src-filter {
+  font-size: var(--fs-table);
+  color: #555;
+}
+.dbg-src-filter select {
+  padding: 3px 6px;
+  font-size: var(--fs-table);
+  margin-left: 4px;
+}
+
+/* --- Senken: Offset-Editor + zusätzliche Felder --- */
+.sink-inline-check { font-size: var(--fs-table); color: #444; font-weight: normal; }
+.sink-meter-type { margin: 8px 0 0; padding: 8px 10px; background: #f3f6fa; border-radius: 6px; }
+.sink-meter-type > label { font-size: var(--fs-table); font-weight: 600; color: #33475b; }
+.sink-meter-type select { margin-left: 4px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+.sink-ct-macs { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.sink-ct-macs label { display: flex; flex-direction: column; font-size: var(--fs-small); font-weight: 600; color: #33475b; gap: 3px; }
+.sink-ct-macs input { padding: 4px 7px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); font-family: monospace; }
+.sink-offsets {
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: #fafbf6;
+  border-left: 3px solid #d9e2c4;
+  border-radius: 0 6px 6px 0;
+}
+.sink-advanced {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #f5f8fc;
+  border: 1px solid #e0e8f0;
+  border-radius: 8px;
+}
+.sink-advanced > summary {
+  cursor: pointer;
+  font-size: var(--fs-table);
+  font-weight: 600;
+  color: #3a5a8a;
+  padding: 0;
+  user-select: none;
+}
+.sink-advanced[open] > summary {
+  margin-bottom: 8px;
+}
+.sink-offsets-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--fs-table);
+  font-weight: 600;
+  color: #4a6b16;  margin-bottom: 6px;
+}
+.sink-offset-add, .sink-offset-del {
+  border: 1px solid #76b900;
+  background: #fff;
+  color: #4a6b16;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sink-offset-del { border-color: #c0392b; color: #c0392b; padding: 2px 6px; }
+.sink-offset-empty { font-size: var(--fs-small); color: #999; }
+.sink-offset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+.sink-offset-row select { padding: 3px 5px; font-size: var(--fs-table); flex: 1; min-width: 120px; }
+.sink-offset-x { color: #888; }
+.sink-offset-factor { width: 64px; padding: 3px 5px; font-size: var(--fs-table); }
+.sink-offset-pos { font-size: var(--fs-small); color: #555; white-space: nowrap; }
+
+/* --- Börsenseite: Jahresauswahl + Vergleichstabelle --- */
+.bs-year-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.bs-year-select label { font-size: var(--fs-body); color: #444; }
+.bs-year-select select { padding: 4px 10px; font-size: var(--fs-body); }
+.bs-compare-wrap { overflow-x: auto; }
+.bs-compare-table {
+  min-width: 640px;
+}
+.bs-compare-table tr.bs-compare-active { background: #f2f8e8; }
+
+/* --- Verbraucher: Inline-Ausklappen des Tagesverlaufs --- */
+.consumer-caret {
+  display: inline-block;
+  color: #999;
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+.consumer-caret.open { transform: rotate(90deg); color: #76b900; }
+.consumer-row.consumer-open { background: #f2f8e8; }
+.consumer-row.consumer-open td { font-weight: 600; }
+.consumer-detail-row > td {
+  padding: 0 8px 12px !important;
+  background: #fafbf6;
+  border-bottom: 1px solid #e5e5e5 !important;
+  /* Verhindert, dass ein breiter Chart-Inhalt (Tagesverlauf mit vielen Balken)
+     die Tabellenzelle über die Tabellenbreite hinaus dehnt. So skaliert der
+     Tageschart wie Monats-/Jahreschart auf die Blockbreite (wichtig mobil). */
+  max-width: 0;
+  overflow: hidden;
+}
+.consumer-detail-inline {
+  padding: 8px 4px 2px;
+}
+.consumer-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.consumer-detail-title { font-weight: 600; font-size: var(--fs-body); }
+.consumer-detail-sum { font-size: var(--fs-table); color: #555; }
+
+/* --- Marstek-Seite --- */
+.mk-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.mk-tile {
+  background: #f7f9f2;
+  border: 1px solid #e5ecd6;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.mk-tile-accent { background: #eef6df; border-color: #cfe3a4; }
+.mk-tile-label { font-size: var(--fs-small); color: #667; margin-bottom: 4px; }
+.mk-tile-value { font-size: var(--fs-h2); font-weight: 600; color: #333; }
+.mk-tile-sub { font-size: var(--fs-small); color: #789; margin-top: 2px; }
+.mk-mode-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.mk-mode-btn {
+  padding: 8px 18px;
+  border: 1px solid #76b900;
+  background: #fff;
+  color: #4a6b16;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.mk-mode-btn:hover:not(:disabled) { background: #f0f7e6; }
+.mk-mode-btn.active { background: #76b900; color: #fff; font-weight: 600; }
+.mk-mode-btn:disabled { opacity: 0.5; cursor: default; }
+.mk-power-ctrl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+.mk-power-ctrl label { font-size: var(--fs-table); color: #445; display: flex; flex-direction: column; gap: 4px; }
+.mk-power-ctrl input { padding: 5px 8px; font-size: var(--fs-body); width: 160px; }
+.mk-power-actions { display: flex; gap: 8px; }
+.mk-power-actions button {
+  padding: 7px 14px;
+  border: 1px solid #999;
+  background: #fafafa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--fs-table);
+}
+.mk-power-actions button:hover:not(:disabled) { background: #f0f0f0; }
+.mk-power-actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* --- Marstek: manuelle Aktualisierung --- */
+.mk-refresh-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 12px;
+  flex-wrap: wrap;
+}
+.mk-refresh-btn {
+  padding: 7px 16px;
+  border: 1px solid #76b900;
+  background: #76b900;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mk-refresh-btn:hover:not(:disabled) { background: #6aa600; }
+.mk-refresh-btn:disabled { opacity: 0.6; cursor: default; }
+.mk-refresh-bar .hint { margin: 0; }
+
+/* --- Börsen-Vergleichstabelle: klickbare Jahreszeilen --- */
+.bs-compare-clickable { cursor: pointer; }
+.bs-compare-clickable:hover { background: #eef5df; }
+.bs-compare-table tr.bs-compare-active { background: #f2f8e8; }
+.bs-compare-table tr.bs-compare-active:hover { background: #e8f2d8; }
+
+/* --- Quellen: Zusatz-Link-Editor --- */
+.src-link-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 5px;
+  align-items: center;
+}
+.src-link-label { flex: 0 0 32%; padding: 4px 6px; font-size: var(--fs-table); }
+.src-link-url { flex: 1; padding: 4px 6px; font-size: var(--fs-table); }
+
+/* --- Verbraucher: angezeigte Zusatz-Links --- */
+.consumer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 4px 4px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed #e0e0e0;
+}
+.consumer-link {
+  font-size: var(--fs-table);
+  color: #4a6b16;
+  text-decoration: none;
+}
+.consumer-link:hover { text-decoration: underline; }
+.source-links-block {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  background: #f6f9f1;
+  border: 1px solid #e3ecd6;
+  border-radius: 8px;
+}
+.source-links-title { font-size: var(--fs-small); font-weight: 600; color: #5a6b45; margin-bottom: 5px; }
+.source-links-list { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+
+/* --- Senken: erweiterte Formel --- */
+.sink-formula {
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: #f6f8fc;
+  border-left: 3px solid #c4d2e2;
+  border-radius: 0 6px 6px 0;
+}
+.sink-formula-head { font-size: var(--fs-table); font-weight: 600; color: #3a5a8a; margin-bottom: 4px; }
+.sink-formula code { background: #eef2f8; padding: 1px 4px; border-radius: 3px; font-size: var(--fs-small); }
+.sink-formula-input {
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--fs-table);
+  padding: 6px 8px;
+  border: 1px solid #c4d2e2;
+  border-radius: 5px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.sink-formula-status { font-size: var(--fs-table); margin-top: 5px; }
+.sink-formula-status.ok { color: #2e7d32; }
+.sink-formula-status.err { color: #c0392b; }
+.sink-formula-vars { color: #777; font-size: var(--fs-small); }
+.sink-formula-doc { margin-top: 6px; font-size: var(--fs-small); }
+.sink-formula-doc summary { cursor: pointer; color: #3a5a8a; }
+.sink-formula-doc ul { margin: 6px 0 0; padding-left: 18px; }
+.sink-formula-doc li { margin-bottom: 2px; color: #555; }
+
+/* --- Verbrauchertabelle: Spaltenbreiten --- */
+.consumer-table col.ct-col-name { width: 56%; }
+.consumer-table col.ct-col-power { width: 18%; }
+.consumer-table col.ct-col-energy { width: 26%; }
+
+/* --- Energiekosten: Dropdown --- */
+.ek-select {
+  padding: 6px 10px;
+  font-size: var(--fs-body);
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #fff;
+  min-width: 200px;
+}
+
+/* --- Verbrauchertabelle: aufklappbarer Raum-Header --- */
+.room-header-click:hover { background: #eef5df; }
+.room-header.room-open { background: #f2f8e8; }
+
+/* --- Chart-Legende: Swatch (Raum-Chart) --- */
+.chart-legend-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+.chart-legend-item.off .chart-legend-swatch { opacity: 0.3; }
+
+/* --- Quellen: Speicherfehler / Validierungshinweis --- */
+.src-save-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #fdecea;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  color: #a12a2a;
+  font-size: var(--fs-body);
+}
+
+/* --- Import/Export-Seite --- */
+.ie-msg-ok { padding: 8px 12px; background: #edf7ed; border: 1px solid #c3e6c3; border-radius: 6px; color: #2e7d32; font-size: var(--fs-body); }
+.ie-msg-err { padding: 8px 12px; background: #fdecea; border: 1px solid #f5c6cb; border-radius: 6px; color: #a12a2a; font-size: var(--fs-body); }
+.ie-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.ie-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #f7f8fa; border-radius: 5px; cursor: pointer; }
+.ie-item:hover { background: #eef1f5; }
+.ie-item-label { flex: 1; font-size: var(--fs-body); }
+.ie-item-count { font-size: var(--fs-small); color: #789; background: #fff; border-radius: 10px; padding: 1px 8px; min-width: 20px; text-align: center; }
+.ie-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.ie-link { background: none; border: none; color: #3a5a8a; cursor: pointer; font-size: var(--fs-table); text-decoration: underline; padding: 2px 4px; }
+/* .ie-primary ist oben zusammen mit .src-save einheitlich definiert.
+   (margin-left:auto hier entfernt – die Container richten rechtsbündig aus.) */
+.ie-file { display: block; margin: 8px 0; }
+.ie-mode { margin-top: 12px; padding-top: 10px; border-top: 1px solid #eee; }
+.ie-mode-title { font-weight: 600; font-size: var(--fs-body); margin-bottom: 6px; }
+.ie-radio { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; font-size: var(--fs-table); line-height: 1.4; cursor: pointer; }
+.ie-radio input { margin-top: 3px; }
+.ie-import-detail { margin-top: 4px; }
+
+/* --- Import/Export: Sicherheitsabfrage --- */
+.ie-confirm-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.ie-confirm {
+  background: #fff; border-radius: 10px; padding: 20px 22px; max-width: 460px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3); margin: 16px;
+}
+.ie-confirm-title { font-size: var(--fs-h4); font-weight: 700; color: #a12a2a; margin-bottom: 8px; }
+.ie-confirm p { font-size: var(--fs-body); line-height: 1.5; margin: 8px 0; }
+.ie-confirm-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.ie-cancel { padding: 8px 16px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: var(--fs-body); }
+.ie-cancel:hover { background: #f2f2f2; }
+.ie-danger { padding: 8px 16px; border: none; background: #c0392b; color: #fff; border-radius: 6px; cursor: pointer; font-size: var(--fs-body); font-weight: 600; }
+.ie-danger:hover { background: #a93226; }
+
+/* --- Verbrauchertabelle: Gesamtzeile über alle Räume --- */
+.consumer-total-row { background: #e8eef7; border-top: 2px solid #b8c8dd; }
+.consumer-total-row td { padding-top: 8px; padding-bottom: 8px; }
+.consumer-total-click:hover { background: #dde7f4; }
+.consumer-power-na { color: #aaa; }
+
+/* --- Benachrichtigungen-Seite --- */
+.notify-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: var(--fs-body); cursor: pointer; }
+.notify-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; margin-top: 8px; max-width: 480px; }
+.notify-grid label { font-size: var(--fs-body); }
+.notify-grid input { padding: 5px 8px; border: 1px solid #ccc; border-radius: 5px; }
+.notify-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+.notify-actions .ie-primary, .notify-actions .src-save { margin-left: auto; }
+.notify-test { padding: 7px 14px; border: 1px solid #3a5a8a; background: #fff; color: #3a5a8a; border-radius: 6px; cursor: pointer; font-size: var(--fs-body); }
+.notify-test:hover { background: #eef2f8; }
+
+/* --- Automatisierungsregeln --- */
+.rule-list { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.rule-card { border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+.rule-card.armed { border-color: #76b900; box-shadow: 0 0 0 1px #76b90033; }
+.rule-card-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+.rule-active-badge { width: 12px; height: 12px; border-radius: 50%; background: #ccc; flex: 0 0 auto; }
+.rule-active-badge.on { background: #76b900; box-shadow: 0 0 6px #76b900; }
+.rule-name { flex: 1 1 200px; min-width: 0; font-size: var(--fs-body); font-weight: 600; border: 1px solid transparent; border-radius: 5px; padding: 4px 6px; box-sizing: border-box; }
+.rule-name:hover, .rule-name:focus { border-color: #ccc; }
+.rule-arm { display: flex; align-items: center; gap: 4px; font-size: var(--fs-table); flex: 0 0 auto; }
+.rule-expand, .rule-del { background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 6px; flex: 0 0 auto; }
+.rule-body { padding: 4px 12px 14px; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 10px; }
+.rule-group { background: #f7f8fa; border-radius: 6px; padding: 8px 10px; }
+.rule-group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.rule-logic button { border: 1px solid #ccc; background: #fff; padding: 2px 8px; cursor: pointer; font-size: var(--fs-small); }
+.rule-logic button:first-child { border-radius: 5px 0 0 5px; }
+.rule-logic button:last-child { border-radius: 0 5px 5px 0; border-left: none; }
+.rule-logic button.on { background: #3a5a8a; color: #fff; border-color: #3a5a8a; }
+.rule-cond { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0; }
+.rule-cond select, .rule-cond input { padding: 4px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+.rule-num { width: 80px; }
+.rule-num-sm { width: 54px; }
+.rule-for { font-size: var(--fs-small); display: flex; align-items: center; gap: 4px; color: #555; }
+.rule-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+.rule-dot-green { background: #37b24d; }
+.rule-dot-red { background: #e03131; }
+.rule-dot-gray { background: #ccc; }
+.rule-wd { display: flex; gap: 2px; }
+.rule-wd .wd { width: 26px; padding: 3px 0; border: 1px solid #ccc; background: #fff; cursor: pointer; font-size: var(--fs-tiny); border-radius: 4px; }
+.rule-wd .wd.on { background: #3a5a8a; color: #fff; border-color: #3a5a8a; }
+.rule-add-cond { margin-top: 4px; background: none; border: 1px dashed #aaa; border-radius: 5px; padding: 3px 10px; cursor: pointer; font-size: var(--fs-table); color: #3a5a8a; }
+.rule-del-cond { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 13px; }
+.rule-action { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 4px 8px; }
+.rule-action select, .rule-action input { padding: 4px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+.rule-msg { flex: 1 1 220px; min-width: 0; box-sizing: border-box; }
+.rule-ac-action { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rule-ac-action select, .rule-ac-action input { padding: 4px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+.rule-ac-pow { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-table); color: #445; }
+.rule-ac-pow input { width: 72px; }
+.rule-autooff { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 4px 8px; font-size: var(--fs-table); color: #445; }
+.rule-autooff > label { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.rule-autooff-dur { display: inline-flex; align-items: center; gap: 4px; }
+.rule-autooff-dur input { width: 70px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+.rule-expire-clear { background: none; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; font-size: var(--fs-small); padding: 3px 8px; color: #555; }
+.rule-expire-clear:hover { background: #f0f0f0; }
+.rule-opts { display: flex; gap: 20px; flex-wrap: wrap; font-size: var(--fs-table); padding-left: 8px; }
+.rule-opts label { display: flex; align-items: center; gap: 5px; }
+.rule-actions { display: flex; gap: 10px; align-items: center; margin: 12px 0; }
+.rule-actions .ie-primary, .rule-actions .src-save { margin-left: auto; }
+.rule-dirty { color: #c07a00; font-size: var(--fs-table); }
+.rule-log { width: 100%; border-collapse: collapse; font-size: var(--fs-table); }
+.rule-log th, .rule-log td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+.rule-log th { color: #667; font-weight: 600; }
+/* Die Ergebnis-Spalte (letzte) enthält lange Meldungen und darf umbrechen,
+   damit die Tabelle in der Blockbreite bleibt statt über die Karte zu ragen.
+   Überschreibt das globale white-space:nowrap des table-scroll-Wrappers. */
+.rule-log th:last-child, .rule-log td:last-child { white-space: normal; min-width: 16ch; }
+.rule-log td:first-child { white-space: nowrap; }
+
+/* --- Quellen: Schaltbarkeit --- */
+.src-switchable { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: var(--fs-body); }
+.src-switchable > label { display: flex; align-items: center; gap: 6px; }
+.src-switch-ch { display: inline-flex; align-items: center; margin-top: 6px; font-size: var(--fs-table); }
+
+/* --- Wasserverbrauch-Tabelle --- */
+/* --- Einheitliche Basis für tabellarische Monats-/Vergleichsaufstellungen --- */
+/* ============================================================================
+   EINHEITLICHE TABELLEN-BASIS (gilt für ALLE Tabellen im Tool)
+   Ziel: gleiche Schriftgröße überall, keine Sonderfälle pro Tabelle mehr.
+   Wer hier etwas ändert, ändert es für das gesamte Tool – bewusst so.
+   ============================================================================ */
+.content table { font-size: var(--fs-table); }
+.content table th,
+.content table td { font-size: var(--fs-table); }
+
+/* Hinweis: Tabellen werden über den .table-scroll-Wrapper scrollbar und
+   blockbreit gehalten (siehe weiter unten). Jede Tabelle im Tool gehört in einen
+   solchen Wrapper. */
+
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--fs-table); margin-top: 12px; }
+.data-table th, .data-table td { text-align: right; padding: 6px 10px; border-bottom: 1px solid #eee; white-space: nowrap; font-size: var(--fs-table); }
+.num-table th, .num-table td { padding: 5px 8px; }
+.data-table th:first-child, .data-table td:first-child { text-align: left; }
+.data-table th { color: #667; font-weight: 600; border-bottom: 2px solid #e5e5e5; }
+.data-table tbody tr:hover { background: #f2f6fb; }
+.data-table tfoot td { border-top: 2px solid #b8c8dd; background: #eef3f9; font-weight: 600; }
+
+.wasser-tab tbody tr.wasser-row-sel { background: #fde8ea; }
+.wasser-tab tbody tr.wasser-row-sel td { font-weight: 600; }
+
+/* --- Perioden-Navigation (zeitversionierte Kostenblöcke) --- */
+.periode-nav { margin: 6px 0 12px; padding: 8px 10px; background: #f3f6fb; border: 1px solid #dde5f0; border-radius: 7px; }
+.periode-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.periode-label { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); }
+.periode-label input[type=date] { padding: 3px 6px; border: 1px solid #ccc; border-radius: 5px; }
+.periode-bis { color: #667; font-size: var(--fs-table); }
+.periode-count { color: #667; font-size: var(--fs-small); }
+.periode-add { border: 1px dashed #7a9bc4; background: #fff; color: #2f5488; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: var(--fs-table); }
+.periode-add:hover { background: #eaf1fa; }
+.periode-del { border: none; background: none; cursor: pointer; font-size: 14px; }
+.periode-err { color: #c0392b; font-size: var(--fs-small); margin-top: 6px; }
+
+/* Warmwasser-Temperaturverlauf */
+.ww-controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 10px 0 6px; }
+.ww-range-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.ww-range-btn { padding: 4px 10px; border: 1px solid #ccd; background: #f7f9fc; border-radius: 6px; font-size: var(--fs-table); cursor: pointer; color: #445; }
+.ww-range-btn:hover { background: #eef3fa; }
+.ww-range-btn.active { background: #4a78c2; border-color: #4a78c2; color: #fff; }
+.ww-nav { display: flex; align-items: center; gap: 8px; }
+.ww-nav-btn { width: 30px; height: 28px; border: 1px solid #ccd; background: #f7f9fc; border-radius: 6px; cursor: pointer; font-size: 15px; color: #445; }
+.ww-nav-btn:hover:not(:disabled) { background: #eef3fa; }
+.ww-nav-btn:disabled { opacity: 0.4; cursor: default; }
+.ww-nav-label { font-size: var(--fs-table); color: #556; min-width: 180px; text-align: center; }
+.ww-legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 8px; }
+.ww-legend-item { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; cursor: pointer; font-size: var(--fs-table); color: #334; padding: 2px 4px; }
+.ww-legend-item.off { opacity: 0.4; text-decoration: line-through; }
+.ww-legend-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.ww-chart-empty { padding: 40px 0; text-align: center; color: #999; font-size: var(--fs-body); }
+.ww-chart-wrap { position: relative; width: 100%; }
+.ww-chart-svg { width: 100%; height: auto; display: block; }
+.ww-tooltip { position: absolute; top: 8px; transform: translateX(-50%); background: rgba(255,255,255,0.97); border: 1px solid #ddd; border-radius: 6px; padding: 6px 9px; font-size: var(--fs-small); pointer-events: none; box-shadow: 0 2px 6px rgba(0,0,0,0.1); white-space: nowrap; }
+.ww-tooltip-time { color: #778; margin-bottom: 3px; font-size: var(--fs-tiny); }
+.ww-tooltip-row { display: flex; align-items: center; gap: 5px; }
+
+/* Stromerzeugung */
+.pv-tagsumme { font-size: var(--fs-table); color: #445; margin-left: auto; }
+
+/* Stromerzeugung: Monatstabelle mit umbrechenden Spaltenüberschriften */
+.pv-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Keine min-width:max-content – die würde die Tabelle auf die Breite OHNE
+   Header-Umbruch aufblähen und die schmalen Spalten verhindern. Die Tabelle
+   nutzt die Blockbreite; passt sie nicht, scrollt der Wrapper. */
+.pv-monat-table { width: 100%; }
+/* Höhere Spezifität als ".table-scroll > table th { white-space: nowrap }",
+   damit die PV-Erzeuger-Namen in der Kopfzeile umbrechen dürfen (sie sind lang;
+   zweizeilige Überschriften sind hier gewünscht). */
+.pv-monat-table th,
+.table-scroll > table.pv-monat-table th {
+  /* Spalten so schmal wie möglich: Umbruch bevorzugt an Wortgrenzen (normal),
+     nur überlange Einzelwörter dürfen notfalls brechen (break-word). Kein
+     word-break:break-word / overflow-wrap:anywhere – die zerhacken jedes Wort
+     zeichenweise und lassen die Spalte trotz Umbruch breit bleiben. Die Breite
+     ergibt sich dann aus dem längsten Wort der Überschrift, nicht aus max-width. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  width: 1%;
+  vertical-align: bottom;
+  font-size: var(--fs-small);
+  line-height: 1.2;
+}
+.pv-monat-table td { font-size: var(--fs-table); }
+/* Kompakteres horizontales Padding, damit die vielen schmalen Spalten nicht
+   durch Innenabstände unnötig breit werden. */
+.pv-monat-table th,
+.pv-monat-table td { padding-left: 5px; padding-right: 5px; }
+
+/* Push-Nachrichten: Info-Aufklapper mit verfügbaren Platzhaltern */
+.rule-notify { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.push-vars-info { font-size: var(--fs-small); }
+.push-vars-toggle {
+  border: none; background: none; cursor: pointer; color: #4a6b16;
+  font-size: 12px; padding: 2px 0; text-align: left;
+}
+.push-vars-toggle:hover { text-decoration: underline; }
+.push-vars-list { margin: 2px 0 0; padding: 6px 10px; list-style: none;
+  background: #f6f9f1; border: 1px solid #e3ecd6; border-radius: 6px; }
+.push-vars-list li { padding: 1px 0; color: #555; }
+.push-vars-list code { background: #eef; padding: 1px 4px; border-radius: 3px; font-size: var(--fs-tiny); }
+
+/* Allgemeiner horizontaler Scroll-Wrapper für Tabellen, die breiter sind als
+   ihr Block (v.a. mobil). Die Tabelle behält ihre Breite und wird scrollbar,
+   statt den Block zu sprengen. */
+.table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* EINHEITLICH für ALLE Tabellen: volle Blockbreite nutzen. Passt der Inhalt
+   nicht (viele/breite Spalten), scrollt der Wrapper horizontal – die Tabelle
+   wächst dann über 100 % hinaus (min-width), staucht aber nie unter Blockbreite.
+   Bewusst EINE Regel für alle, statt pro Tabelle Sonderfälle. */
+.table-scroll > table { width: 100%; }
+.table-scroll > table th,
+.table-scroll > table td { white-space: nowrap; }
+
+/* Automatisierungsregeln: Drag & Drop zum Umsortieren */
+.rule-drag-handle {
+  cursor: grab;
+  color: #aaa;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.rule-drag-handle:hover { color: #76b900; }
+.rule-drag-handle:active { cursor: grabbing; }
+.rule-card.rule-dragging { opacity: 0.5; }
+.rule-card.rule-dragover { border-color: #76b900; box-shadow: 0 -2px 0 0 #76b900; }
+
+/* Automatisierungsregeln: Gruppen */
+.rule-groups { display: flex; flex-direction: column; gap: 18px; }
+.rule-group-box {
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #f7f7f7;
+  padding: 12px 14px;
+}
+.rule-group-box.rule-group-dragover { border-color: #76b900; box-shadow: 0 0 0 2px #76b90033; }
+.rule-group-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.rule-group-name {
+  font-size: var(--fs-h4); font-weight: 600; border: 1px solid transparent;
+  background: transparent; padding: 3px 6px; border-radius: 6px; flex: 1 1 auto; min-width: 0;
+}
+.rule-group-name:hover, .rule-group-name:focus { border-color: #ccc; background: #fff; outline: none; }
+.rule-group-name-static { font-size: var(--fs-h4); font-weight: 600; color: #777; flex: 1 1 auto; padding: 3px 6px; }
+.rule-group-count {
+  font-size: var(--fs-small); color: #666; background: #e6e6e6; border-radius: 10px;
+  padding: 1px 8px; flex: 0 0 auto;
+}
+.rule-group-del { border: none; background: none; cursor: pointer; font-size: 15px; opacity: 0.6; flex: 0 0 auto; }
+.rule-group-del:hover { opacity: 1; }
+.rule-group-empty { font-style: italic; color: #aaa; padding: 10px; text-align: center; border: 1px dashed #d5d5d5; border-radius: 8px; }
+.rule-group-add {
+  margin-top: 8px; font-size: var(--fs-table); background: none; border: 1px dashed #bbb;
+  border-radius: 6px; padding: 5px 10px; cursor: pointer; color: #555;
+}
+.rule-group-add:hover { border-color: #76b900; color: #76b900; }
+
+/* Automatisierungsregeln: Aktionslisten (mehrere Aktionen) */
+.rule-action-list { margin: 10px 0; }
+.rule-action-list-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rule-add-action {
+  font-size: var(--fs-table); background: none; border: 1px dashed #bbb; border-radius: 6px;
+  padding: 3px 10px; cursor: pointer; color: #555;
+}
+.rule-add-action:hover { border-color: #76b900; color: #76b900; }
+.rule-action-empty { margin: 4px 0 8px; font-style: italic; color: #999; }
+.rule-offhint, .rule-expire-hint { margin-top: 6px; font-size: var(--fs-table); line-height: 1.5; }
+
+/* Übersicht: Kacheln laufender/markierter Automatisierungsregeln */
+.rrt-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  max-width: 800px;
+  margin: 12px auto 0;
+}
+.rrt-tile {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  padding: 8px 10px;
+  font-size: var(--fs-table);
+}
+.rrt-tile.rrt-running {
+  border-color: #76b900;
+  background: #f2f9e8;
+  box-shadow: 0 0 0 1px #76b90033;
+}
+/* Scharfe (aktive/„armed") Regeln: kräftig umrandet, damit sie sich optisch von
+   nicht scharfen Kacheln unterscheiden. Wirkt auch kombiniert mit rrt-running. */
+.rrt-tile.rrt-armed {
+  border-width: 2px;
+  border-color: #2f6db0;
+}
+.rrt-tile.rrt-armed.rrt-running {
+  /* laufend UND scharf: grüner Lauf-Hintergrund, aber blaue kräftige Kante */
+  border-color: #2f6db0;
+  box-shadow: 0 0 0 1px #76b90033;
+}
+/* Nicht scharfe Kacheln dezent gestrichelt, zur klaren Abgrenzung. */
+.rrt-tile:not(.rrt-armed) {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.rrt-name {
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.rrt-row { display: flex; align-items: center; gap: 8px; }
+.rrt-btn {
+  border: none;
+  border-radius: 6px;
+  background: #e8e8e8;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 9px;
+  color: #333;
+}
+.rrt-btn:hover { background: #76b900; color: #fff; }
+.rrt-btn.rrt-stop { background: #76b900; color: #fff; }
+.rrt-btn.rrt-stop:hover { background: #c0152f; }
+.rrt-since { font-size: var(--fs-small); color: #666; }
+
+/* Mobil: kompaktere Kacheln, damit sie nicht zu klobig wirken. Mehr Kacheln pro
+   Reihe, weniger Innenabstand, kleinere Schrift und Buttons. */
+@media (max-width: 800px) {
+  .rrt-wrap {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .rrt-tile { padding: 5px 7px; font-size: var(--fs-small); }
+  .rrt-name { margin-bottom: 4px; font-size: var(--fs-small); line-height: 1.2; }
+  .rrt-row { gap: 6px; }
+  .rrt-btn { font-size: 12px; padding: 2px 7px; }
+  .rrt-since { font-size: var(--fs-tiny); }
+}
+
+/* Automatisierungsregel: Play/Stop-Button im Kopf */
+.rule-runbtn {
+  border: none;
+  border-radius: 6px;
+  background: #e8e8e8;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 9px;
+  color: #333;
+  flex: 0 0 auto;
+}
+.rule-runbtn:hover { background: #76b900; color: #fff; }
+.rule-runbtn.stop { background: #76b900; color: #fff; }
+.rule-runbtn.stop:hover { background: #c0152f; }
+.rule-card.running { border-color: #76b900; box-shadow: 0 0 0 1px #76b90033; }
+
+/* Push-Platzhalter: kompaktes Info-Icon mit Mouseover-Tooltip */
+.push-vars-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  cursor: help;
+}
+.push-vars-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #7a8aa0;
+  color: #fff;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 700;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+}
+.push-vars-icon:hover .push-vars-icon-badge,
+.push-vars-icon:focus .push-vars-icon-badge { background: #4d6fa9; }
+.push-vars-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 340px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  font-size: var(--fs-small);
+  color: #444;
+  text-align: left;
+  white-space: normal;
+}
+.push-vars-icon:hover .push-vars-tooltip,
+.push-vars-icon:focus .push-vars-tooltip { display: flex; }
+.push-vars-tooltip strong { font-size: var(--fs-small); margin-bottom: 3px; color: #222; }
+.push-vars-tip-row { line-height: 1.4; }
+.push-vars-tooltip code { background: #eef; padding: 1px 5px; border-radius: 3px; font-size: var(--fs-tiny); margin-right: 3px; }
+
+/* Quellen-Konfig: Inline-Label mit Auswahl (z.B. DC-Speicher-Verknüpfungen) */
+.src-inline-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+.src-inline-label select { flex: 0 1 auto; min-width: 220px; }
+
+/* Speicher-Seite: Schalter der DC-Speicher-zugeordneten Quellen */
+.dc-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.dc-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #e2e2e2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+.dc-switch-label { font-size: var(--fs-table); font-weight: 600; }
+.dc-switch-btns { display: flex; gap: 6px; }
+.dc-sw-on, .dc-sw-off {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: var(--fs-table);
+}
+.dc-sw-on:hover:not(:disabled), .dc-sw-off:hover:not(:disabled) { filter: brightness(0.92); }
+.dc-sw-on:disabled, .dc-sw-off:disabled { opacity: 0.5; cursor: default; }
+
+/* DC-Schalter: Zustands-Hervorhebung (an/aus/unbekannt) */
+.dc-switch.dc-switch-on { border-color: #76b900; background: #f2f9e8; }
+.dc-switch.dc-switch-off { border-color: #c9ccc9; background: #f5f5f5; }
+.dc-switch.dc-switch-unknown { border-color: #e2e2e2; background: #fafafa; }
+.dc-switch-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: #bbb;
+}
+.dc-switch-on .dc-switch-dot { background: #76b900; box-shadow: 0 0 0 2px #76b90033; }
+.dc-switch-off .dc-switch-dot { background: #9aa0a6; }
+.dc-switch-unknown .dc-switch-dot { background: #ccc; }
+.dc-switch-state-text {
+  margin-left: 6px;
+  font-size: var(--fs-tiny);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.dc-switch-on .dc-switch-state-text { color: #5f9600; }
+.dc-switch-off .dc-switch-state-text { color: #888; }
+.dc-switch-unknown .dc-switch-state-text { color: #aaa; }
+/* aktiver Button hervorgehoben, inaktiver gedämpft */
+.dc-sw-on { background: #e8e8e8; color: #333; }
+.dc-sw-on.active { background: #76b900; color: #fff; }
+.dc-sw-off.active { background: #6b7280; color: #fff; }
+
+/* Börsenstrompreis: Reload-Icon neben der Datumsauswahl */
+.spot-datenav { display: flex; align-items: center; gap: 6px; }
+
+/* Monatsauswahl: ausgeschriebener Monat ("August 2026") statt nativem "08.2026".
+   Das native month-Input bleibt als Picker erhalten, wird aber unsichtbar über
+   dem Label positioniert, damit ein Klick den Picker öffnet. */
+.monthnav-display { position: relative; display: inline-flex; }
+.monthnav-label {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  padding: 3px 10px;
+  font-size: var(--fs-body);
+  color: #222;
+  cursor: pointer;
+  min-width: 8.5em;
+  text-align: center;
+}
+.monthnav-label:hover:not(:disabled) { background: #f3f3f3; }
+.monthnav-label:disabled { opacity: 0.5; cursor: default; }
+/* natives Input unsichtbar, aber klickbar über dem Label (für den Picker) */
+.monthnav-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* Marstek-Cloud CT-Registrierungsblock (Senkenseite) */
+.sink-ct-register {
+  border: 1px solid #d9c48a;
+  background: #fdf9ee;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.sink-ct-register-title { font-weight: 600; font-size: var(--fs-body); color: #7a5c00; margin-bottom: 2px; }
+.sink-ct-register-fields { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.sink-ct-register-fields label { display: flex; flex-direction: column; font-size: var(--fs-small); color: #555; gap: 3px; flex: 1 1 220px; }
+.sink-ct-register-fields input { padding: 5px 7px; font-size: var(--fs-body); box-sizing: border-box; width: 100%; }
+.sink-ct-register-btn {
+  padding: 6px 14px; font-size: 14px; border-radius: 6px; cursor: pointer;
+  background: #c8a23a; color: #fff; border: 1px solid #b0892a;
+}
+.sink-ct-register-btn:disabled { opacity: 0.6; cursor: default; }
+.sink-ct-register-ok { color: #1a7f37; font-size: var(--fs-table); margin: 8px 0 0; }
+.sink-ct-register-err { color: #b3261e; font-size: var(--fs-table); margin: 8px 0 0; }
+
+/* Multi-Speicher-Balancer Live-Block (Senkenseite) */
+.ct-balancer { border: 1px solid #cdd9e5; margin-top: 16px; }
+.ct-balancer h3 { margin-top: 0; font-size: var(--fs-h4); }
+.ct-bal-summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
+.ct-bal-kpi {
+  flex: 1 1 120px; background: #f5f8fc; border: 1px solid #e0e8f0;
+  border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 1px;
+}
+.ct-bal-kpi-label { font-size: var(--fs-small); color: #667; }
+.ct-bal-kpi-val { font-size: var(--fs-body); font-weight: 600; color: #445; }
+.ct-bal-table { width: auto; min-width: max-content; border-collapse: collapse; font-size: var(--fs-table); color: #444; }
+.ct-bal-table th, .ct-bal-table td { padding: 4px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid #eef; }
+/* Jede Spalte breit genug für ihre Überschrift, damit sich Titel wie
+   „Speicher (IP)"/„Phase" oder „Delta gesendet"/„Gewicht" nicht überlappen. */
+.ct-bal-table th { min-width: 4.5em; }
+/* Aktiver Speicher der alternierenden Entladung: dezent grün hervorgehoben. */
+.ct-bal-table tr.ct-bal-aktiv td { background: #eaf6ec; }
+.ct-bal-table th:first-child { min-width: 8em; }
+.ct-bal-table th:first-child, .ct-bal-table td:first-child { text-align: left; }
+.ct-bal-table thead th { color: #667; font-weight: 600; border-bottom: 1px solid #dde; }
+.ct-bal-pos { color: #1a7f37; }
+.ct-bal-neg { color: #b3261e; }
+.ct-bal-explain { margin-top: 12px; padding-top: 10px; border-top: 1px solid #eef; }
+.ct-bal-explain h4 { margin: 0 0 5px; color: #556; font-size: var(--fs-body); }
+.ct-bal-explain ol { font-size: var(--fs-body); color: #777; line-height: 1.6; margin: 8px 0; padding-left: 22px; }
+.ct-bal-explain ol li { margin: 5px 0; }
+.ct-bal-explain code { background: #eef; padding: 1px 5px; border-radius: 4px; }
+.ct-bal-weights { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0; }
+.ct-bal-weights label { display: flex; flex-direction: column; font-size: var(--fs-tiny); font-weight: 600; color: #33475b; gap: 3px; }
+.ct-bal-weights input { width: 80px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-small); }
+.ct-bal-target label { display: flex; flex-direction: column; font-size: var(--fs-small); font-weight: 600; color: #33475b; gap: 3px; max-width: 220px; }
+.ct-bal-target input { padding: 4px 7px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); }
+
+/* --- PV-Anlagendaten-Seite --- */
+.pvanlagen-page .card { margin-bottom: 14px; }
+.pv-pool .pv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; background: #eef2f7; border: 1px solid #d6dee8; border-radius: 14px; font-size: var(--fs-small); cursor: grab; user-select: none; }
+.pv-chip:active { cursor: grabbing; }
+.pv-chip-assigned { cursor: default; background: #e6f4ea; border-color: #b7e0c4; }
+.pv-chip-x { border: none; background: none; color: #888; font-size: 14px; line-height: 1; cursor: pointer; padding: 0 0 0 2px; }
+.pv-chip-x:hover { color: #db4437; }
+.pv-anlage.pv-droptarget { outline: 2px dashed #4285f4; outline-offset: 2px; }
+.pv-anlage-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.pv-name { font-size: var(--fs-body); font-weight: 600; padding: 4px 8px; border: 1px solid #ccc; border-radius: 5px; flex: 1; min-width: 0; }
+.pv-kwp { font-size: var(--fs-table); font-weight: 600; color: #0f9d58; white-space: nowrap; }
+.pv-del { font-size: 12px; color: #db4437; background: none; border: 1px solid #e2b4b0; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+.pv-standort { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.pv-standort label { display: flex; flex-direction: column; font-size: var(--fs-small); font-weight: 600; color: #33475b; gap: 3px; }
+.pv-standort input { padding: 4px 7px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); width: 150px; }
+.pv-assigned { font-size: var(--fs-small); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pv-assigned-label { font-weight: 600; color: #33475b; }
+.pv-strings-head { display: flex; align-items: center; gap: 10px; font-weight: 600; color: #33475b; font-size: var(--fs-table); margin: 6px 0; }
+.pv-strings-head button, .pv-actions button, .pv-forecast-head button { font-size: var(--fs-small); padding: 4px 10px; border: 1px solid #b7c2d0; border-radius: 5px; background: #f4f7fb; cursor: pointer; }
+.pv-string { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid #eee; }
+.pv-string-nr { font-weight: 700; color: #4285f4; font-size: var(--fs-table); align-self: center; }
+.pv-string label { display: flex; flex-direction: column; font-size: var(--fs-tiny); font-weight: 600; color: #33475b; gap: 2px; }
+.pv-string input { padding: 3px 6px; border: 1px solid #ccc; border-radius: 5px; font-size: var(--fs-table); width: 82px; }
+.pv-string-kwp { font-size: var(--fs-small); font-weight: 600; color: #0f9d58; align-self: center; }
+.pv-az-hint { font-size: var(--fs-tiny); color: #777; align-self: center; min-width: 56px; }
+.pv-string-del { font-size: 11px; color: #db4437; background: none; border: none; cursor: pointer; align-self: center; }
+.pv-az-legend { margin-top: 6px; }
+.pv-actions { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+.pv-savemsg { font-size: var(--fs-small); color: #0f9d58; }
+.pv-forecast-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pv-err { color: #db4437; font-size: var(--fs-table); }
+.pv-fc-kpis { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
+.pv-kpi { display: flex; flex-direction: column; background: #f4f7fb; border: 1px solid #e0e7ef; border-radius: 8px; padding: 10px 14px; min-width: 130px; }
+.pv-kpi-val { font-size: var(--fs-h2); font-weight: 700; color: #33475b; }
+.pv-kpi-lbl { font-size: var(--fs-tiny); color: #777; }
+.pv-fc-table { margin: 8px 0; }
+.pv-fc-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); padding: 2px 0; }
+.pv-fc-dot, .pv-legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+.pv-fc-name { font-weight: 600; color: #33475b; min-width: 120px; }
+.pv-fc-err { color: #db4437; }
+.pv-chart { margin-top: 10px; }
+.pv-chart-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.pv-legend-item { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-tiny); color: #33475b; }
+.pv-chart-note { margin-left: auto; }
+
+/* PV-Prognose-Overlay im Erzeuger-Tagesverlauf */
+.pv-prognose-info { color: #b9822a; font-weight: 400; }
+.pv-prognose-legende { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.pv-prognose-swatch { display: inline-block; width: 22px; height: 0; border-top: 2px dashed #e8a33d; }
+
+/* PV-Prognose: Skalierungs-Switch + 2-Tage-Chart */
+.pv-anpassen { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-table); margin: 4px 0 2px; cursor: pointer; }
+.pv-anpassen input { cursor: pointer; }
+.pv-anpassen-badge { font-weight: 600; padding: 1px 6px; border-radius: 10px; font-size: var(--fs-badge); }
+.pv-anpassen-badge.pos { background: #e6f4ea; color: #137333; }
+.pv-anpassen-badge.neg { background: #fce8e6; color: #c5221f; }
+.pv-fc-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pv-fc-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; font-size: var(--fs-table); }
+.pv-fc-legend .pv-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.pv-fc-legend .pv-legend-dot { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+/* PV-Prognose: Detailzeilen je Anlage (heute/Rest/morgen) */
+.pv-fc-anlagen { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-size: var(--fs-table); }
+.pv-fc-anlage-row { display: flex; align-items: center; gap: 7px; }
+.pv-fc-anlage-name { min-width: 180px; font-weight: 500; }
+.pv-fc-anlage-vals { color: #444; }
+
+/* Chart-Plotbereich: relativer Container nur um das SVG, damit der Hover-Layer
+   (inset:0) nur das Chart abdeckt und der Tooltip nicht darüber hinausragt. */
+.chart-plot { position: relative; }
+
+/* Prognose-Skalierung: Einstellung + Erklärung (PV-Anlagenseite) */
+.pv-skal-box { margin: 8px 0 4px; padding: 8px 10px; background: #f7f7f5; border-radius: 6px; }
+.pv-skal-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.pv-skal-toggle input { cursor: pointer; }
+.pv-skal-erklaerung { margin: 6px 0 0; }
+.pv-skal-hinweis { margin: 2px 0 6px; }
+
+/* Versionsnummer klein neben "live" in der Topbar */
+.conn-version { margin-left: 6px; font-size: 10px; opacity: 0.6; font-weight: 400; }
+
+/* Menü-Footer: OFFIS-Logo (verlinkt) + Versionsnummer, ganz unten */
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e6e6e6;
+}
+.footer-conn { flex: 0 0 auto; }
+.sidebar-footer-logo { display: inline-flex; }
+.sidebar-footer-logo svg,
+.sidebar-footer-logo img { height: 32px; width: auto; display: block; }
+.sidebar-footer-version { font-size: var(--fs-tiny); color: #999; }
+
+/* FLUX-Produktlogo im Header (Position des früheren OFFIS-Logos), 200 % der
+   vorherigen Logogröße (vorher 40 px → jetzt 80 px). */
+.topbar-flux-logo {
+  height: 80px;
+  width: auto;
+  margin-left: auto;
+  display: block;
+}
+.sidebar-flux-logo {
+  height: 80px;
+  width: auto;
+  margin: 0 auto;
+  display: block;
+}
+
+/* Farbige Icons auf der Übersicht (Sonne bei Rest-Prognose, Pfeile bei den
+   Zählerständen). Emoji werden vom System farbig gerendert – anders als die
+   früheren schwarzen Unicode-Symbole. Größe dezent an den Text angepasst. */
+.sun-icon,
+.grid-arrow {
+  font-size: 0.95em;
+  vertical-align: -0.05em;
+}
+
+/* Standort-Block mit Leaflet-Karte */
+.pv-standort-block h3 { margin-top: 0; }
+.pv-standort-suche { display: flex; gap: 8px; margin: 8px 0; }
+.pv-standort-suche input { flex: 1; padding: 6px 8px; }
+.pv-standort-karte {
+  height: 340px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  margin: 8px 0;
+  z-index: 0; /* unter der Sidebar bleiben */
+}
+.pv-standort-koords {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  font-size: var(--fs-body);
+}
+.pv-standort-label { color: #666; font-size: var(--fs-small); flex-basis: 100%; }
+.pv-standort-save { margin-left: auto; }
+.pv-save-msg { color: #0a7d28; font-size: var(--fs-table); }
+
+/* Prognoselieferant-Auswahl im Block Ertragsprognose */
+.pv-fc-anbieter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  font-size: var(--fs-table);
+}
+.pv-fc-anbieter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-table);
+  font-weight: 500;
+  color: #444;
+}
+.pv-fc-anbieter select {
+  font-size: var(--fs-table);
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+.pv-fc-anbieter .hint { font-size: var(--fs-small); }
+
+/* Gelernte Lade-/Entladegrenzen im Balancer: dezent grau, monospace-Ziffern */
+.ct-bal-cap { color: #556; font-variant-numeric: tabular-nums; }
+
+/* FLUX-Logo als klickbarer Button (führt zur Gesamtübersicht) – ohne Button-Optik */
+.flux-logo-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar-flux-btn { margin-left: auto; }
+.sidebar-flux-btn { margin: 0 auto; }
+
+/* Deaktivierte Verbraucher/Speicher in der Verbraucherliste kennzeichnen */
+.consumer-disabled-tag { color: #999; font-size: var(--fs-small); font-style: italic; }
+
+/* Inline-Erklärung bei Automatisierungsbedingungen (z.B. Quelle aktiviert/deaktiviert) */
+.rule-hint-inline { font-size: var(--fs-small); color: #888; font-style: italic; }
+
+/* Menü-Editor (Visualisierungsseite): Drag&Drop der Menüstruktur */
+.menu-editor-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.menu-editor-item {
+  border: 1px solid #e2e2e2;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  font-size: var(--fs-body);
+}
+.menu-editor-item.dragging { opacity: 0.5; border-style: dashed; }
+.menu-editor-row { display: flex; align-items: center; gap: 8px; }
+.menu-editor-label { font-weight: 500; }
+.menu-editor-group-tag {
+  margin-left: auto;
+  font-size: var(--fs-tiny);
+  color: #888;
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.menu-drag-handle {
+  cursor: grab;
+  color: #999;
+  user-select: none;
+  font-size: 15px;
+  line-height: 1;
+}
+.menu-drag-handle:active { cursor: grabbing; }
+.menu-editor-children { list-style: none; margin: 8px 0 0; padding: 0 0 0 22px; }
+.menu-editor-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background: #fafafa;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  font-size: var(--fs-body);
+}
+.menu-editor-child.dragging { opacity: 0.5; border-style: dashed; }
+.menu-editor-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+
+/* Hilfeseite API-Endpunkte: klickbare Endpunktliste */
+.api-ep-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.api-ep {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+.api-ep:last-child { border-bottom: none; }
+.api-ep-link { text-decoration: none; }
+.api-ep-link code {
+  background: #eef4fb;
+  color: #1f5fa8;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: var(--fs-table);
+  border: 1px solid #d6e4f5;
+}
+.api-ep-link:hover code {
+  background: #1f5fa8;
+  color: #fff;
+  border-color: #1f5fa8;
+}
+.api-ep-params {
+  margin-left: 6px;
+  font-family: monospace;
+  font-size: var(--fs-small);
+  color: #888;
+}
+.api-ep-desc {
+  margin-top: 4px;
+  font-size: var(--fs-table);
+  color: #555;
+  line-height: 1.35;
+}
+
+/* Hilfeseite API: schreibende Endpunkte (nicht klickbar, mit Methoden-Badge) */
+.api-write-divider { margin-top: 24px; }
+.api-write-divider h2 { margin-bottom: 4px; }
+.api-ep-write { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.api-ep-method {
+  font-size: var(--fs-tiny);
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+.api-ep-method-post { background: #2f8f4e; }
+.api-ep-method-put { background: #b07d2f; }
+.api-ep-method-delete { background: #c0152f; }
+.api-ep-wpath {
+  background: #f2f2f2;
+  color: #444;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: var(--fs-table);
+  border: 1px solid #e2e2e2;
+}
+.api-ep-write .api-ep-desc { flex-basis: 100%; margin-top: 2px; }
+
+/* Ausgegrautes Label für Max. Leistung §42c (wenn include42c aus) */
+.sink-label-disabled { color: #aaa; }
+input:disabled { background: #f5f5f5; color: #aaa; cursor: not-allowed; }
+
+/* Datenbankschema-Tabelle: umbrechen statt horizontal scrollen */
+.schema-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.schema-table td, .schema-table th { text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }
+.schema-table td:first-child, .schema-table th:first-child { width: 180px; }
+
+/* Batteriemodul-Tabelle: erste Spalte schmaler */
+.mk-modules-table .mk-mod-col { width: 70px; white-space: nowrap; }
+
+/* Wärmepumpen-Datenreihen: klickbare Zeile, ausgegraut wenn ausgeblendet */
+.wp-series-row.wp-row-off td { opacity: 0.4; }
+.wp-series-row:hover td { background: #f6f9fc; }
+
+/* Prognose-Verlaufs-Slider (unter dem Ertragsprognose-Chart, halbe Breite) */
+.pv-verlauf { width: 50%; min-width: 260px; margin: 6px 0 2px; }
+.pv-verlauf-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-table); margin-bottom: 4px; }
+.pv-verlauf-tag { font-size: var(--fs-tiny); color: #2f8f4e; background: #eaf6ee; border-radius: 4px; padding: 1px 6px; }
+.pv-verlauf-track { position: relative; height: 26px; }
+.pv-verlauf-range { position: absolute; left: 0; right: 0; top: 8px; width: 100%; margin: 0; }
+.pv-verlauf-mark {
+  position: absolute; top: 2px; width: 2px; height: 10px;
+  background: #1f5fa8; transform: translateX(-1px); cursor: pointer; border-radius: 1px;
+}
+.pv-verlauf-mark.sel { background: #c0152f; width: 3px; height: 13px; top: 0; }
+.pv-verlauf-scale { display: flex; justify-content: space-between; font-size: var(--fs-tiny); color: #999; margin-top: 2px; }
+
+/* Ein-/ausklappbare Quellen- und Senken-Boxen */
+.src-collapse-toggle {
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  color: #666; padding: 0 6px 0 0; line-height: 1;
+}
+.src-collapse-toggle:hover { color: #111; }
+/* Eingeklappt: alle direkten Kinder der Box ausblenden außer der Kopfzeile */
+.src-box-collapsed > *:not(.src-row1) { display: none; }
+/* Kopfzeile im eingeklappten Zustand ohne unteren Abstand */
+.src-box-collapsed .src-row1 { margin-bottom: 0; }
+
+/* Bläulicher Info-/Einstellungsblock (CT-Konfiguration) */
+.ct-blue-block {
+  margin-top: 10px; padding: 10px 12px;
+  background: #f5f8fc; border: 1px solid #e0e8f0; border-radius: 8px;
+}
+.ct-blue-block > .hint:first-child,
+.ct-blue-block > label:first-child { margin-top: 0; }
+
+/* CT-Registrierung als einklappbarer Block */
+details.sink-ct-register > summary {
+  cursor: pointer; font-weight: 600; color: #33475b; font-size: var(--fs-table);
+  list-style: revert;
+}
+details.sink-ct-register > summary:hover { color: #111; }
+
+
+/* Schriftgrößen-Konfiguration (Visualisierungsseite) */
+.fs-config-table td { vertical-align: middle; }
+.fs-num {
+  width: 56px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 5px;
+  text-align: right; font-size: var(--fs-table);
+}
+.fs-reset-btn {
+  padding: 3px 10px; border: 1px solid #ccd; background: #f5f8fc; color: #445;
+  border-radius: 5px; cursor: pointer; font-size: var(--fs-small);
+}
+.fs-reset-btn:hover { background: #e8eef7; }
+
+/* Verbraucher-Detail: Granularitäts-Umschalter Tag/Monat/Jahr */
+.cdc-gran-switch { display: flex; gap: 6px; margin: 4px 0 10px; }
+.cdc-gran-switch button {
+  padding: 4px 14px; border: 1px solid #ccd; background: #f5f8fc; color: #445;
+  border-radius: 6px; cursor: pointer; font-size: var(--fs-body);
+}
+.cdc-gran-switch button.active { background: #2d6ab0; color: #fff; border-color: #2d6ab0; }
+.cdc-summe { margin: 2px 0 8px; font-size: var(--fs-body); color: #333; }
+.cdc-yearnav { display: flex; align-items: center; gap: 12px; }
+.cdc-yearnav button {
+  padding: 3px 12px; border: 1px solid #ccd; background: #f5f8fc; border-radius: 6px; cursor: pointer;
+}
+.cdc-yearnav button:disabled { opacity: 0.4; cursor: default; }
+.cdc-year { font-weight: 600; font-size: var(--fs-body); }
+.cdc-bars-wrap { width: 100%; }
+.cdc-bars { width: 100%; height: auto; display: block; }
+
+/* Prognose-Abrufintervall (im Ertragsprognose-Block) */
+.pv-fc-interval { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; font-size: var(--fs-body); }
+.pv-fc-interval .ek-input { width: 72px; }
+.cdc-drill-hint { margin: 2px 0 0; font-size: var(--fs-hint); color: #888; }
+
+/* Wärmepumpen-Kennzahlen (KPI-Block) */
+.wpkpi-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 10px 0; }
+.wpkpi-modus { display: flex; gap: 6px; flex-wrap: wrap; }
+.wpkpi-modus button {
+  padding: 4px 14px; border: 1px solid #ccd; background: #f5f8fc; color: #445;
+  border-radius: 6px; cursor: pointer; font-size: var(--fs-body);
+}
+.wpkpi-modus button.active { background: #2d6ab0; color: #fff; border-color: #2d6ab0; }
+.wpkpi-range { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); }
+.wpkpi-range select, .wpkpi-range input { font-size: var(--fs-body); padding: 3px 6px; }
+.wpkpi-frei { display: flex; align-items: center; gap: 6px; }
+.wpkpi-zeitraum { font-size: var(--fs-body); color: #333; margin: 4px 0 12px; }
+.wpkpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.wpkpi-kachel {
+  border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;
+  background: #fafcff; display: flex; flex-direction: column; gap: 3px;
+}
+.wpkpi-kachel-label { font-size: var(--fs-small); color: #667; }
+.wpkpi-kachel-wert { font-size: var(--fs-kpi); font-weight: 600; color: #223; line-height: 1.1; }
+.wpkpi-kachel-einheit { font-size: var(--fs-body); font-weight: 400; color: #556; }
+.wpkpi-kachel-sub { font-size: var(--fs-tiny); color: #889; }
+.wp-daynav { margin: 6px 0 10px; }
+.wp-subhead { margin: 18px 0 4px; }
+
+/* WP-Kennzahlen: Gruppen, Cluster, klickbare Kacheln, Monatsdiagramm */
+.wpkpi-gruppe { margin: 14px 0 6px; }
+.wpkpi-gruppe-titel {
+  font-size: var(--fs-h4); font-weight: 600; color: #334;
+  border-bottom: 2px solid #e2e8f0; padding-bottom: 3px; margin-bottom: 10px;
+}
+.wpkpi-cluster { margin: 8px 0 12px; }
+.wpkpi-cluster-titel { font-size: var(--fs-small); font-weight: 600; margin-bottom: 6px; }
+.wpkpi-kachel.klickbar { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.wpkpi-kachel.klickbar:hover { border-color: #9db8dd; }
+.wpkpi-kachel.aktiv { border-color: #2d6ab0; box-shadow: 0 0 0 2px rgba(45,106,176,0.18); background: #f0f6fd; }
+.wpkpi-chartbox { margin-top: 16px; border-top: 1px solid #e8edf3; padding-top: 12px; }
+.wpkpi-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.wpkpi-chart-titel { font-size: var(--fs-charttitle); font-weight: 600; color: #334; }
+.wpkpi-chart-head input { font-size: var(--fs-body); padding: 3px 6px; }
+.wpkpi-legende { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; font-size: var(--fs-small); color: #556; }
+.wpkpi-legende span { display: inline-flex; align-items: center; gap: 5px; }
+.wpkpi-legende i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+/* Warmwasser-Chart: Trenner in der Legende (Temperaturen | Erzeuger-Overlays) */
+.ww-legend-sep { width: 1px; align-self: stretch; background: #dde3ea; margin: 0 4px; }
+
+/* Warmwasser-KPI: Info-Tooltip + Formel-Editor */
+.ww-info { position: relative; display: inline-block; margin-left: 5px; color: #5b7fc0; cursor: help; font-size: var(--fs-small); }
+.ww-info-box {
+  display: none; position: absolute; left: 0; top: 130%; z-index: 30;
+  width: 340px; max-width: 78vw; padding: 10px 12px; white-space: pre-line;
+  background: #fff; border: 1px solid #cdd6e2; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.14); color: #334; font-size: var(--fs-small);
+  line-height: 1.5; text-align: left; font-weight: 400;
+}
+.ww-info:hover .ww-info-box, .ww-info:focus .ww-info-box { display: block; }
+.ww-formel-edit-btn {
+  margin-left: 6px; border: none; background: none; cursor: pointer;
+  color: #5b7fc0; font-size: var(--fs-small); padding: 0 2px;
+}
+.ww-formel-edit-btn:hover { color: #2d6ab0; }
+.ww-formel-editor { margin-top: 12px; padding: 12px; border: 1px solid #dbe2ec; border-radius: 8px; background: #f8fafc; }
+.ww-formel-editor label { display: block; font-size: var(--fs-small); color: #445; margin-bottom: 6px; }
+.ww-formel-editor input { width: 100%; font-family: monospace; font-size: var(--fs-body); padding: 6px 8px; box-sizing: border-box; }
+.ww-formel-fehler { color: #c0392b; font-size: var(--fs-small); margin: 6px 0 0; }
+.ww-formel-btns { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Drag&Drop-Sortierung der Kachel-Raster (SortableGrid) */
+.sortable-cell { display: flex; min-width: 0; }
+.sortable-cell > * { flex: 1 1 auto; min-width: 0; }
+.sortable-cell.draggable { cursor: grab; }
+.sortable-cell.draggable:active { cursor: grabbing; }
+.sortable-cell.drop-target { outline: 2px dashed #2d6ab0; outline-offset: 2px; border-radius: 10px; }
+.sortable-cell.draggable > * { transition: transform .08s; }
+.sortable-cell.draggable:hover > * { transform: translateY(-1px); }
+/* Sortiermodus-Umschalter */
+.tile-sort-toggle {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+  font-size: var(--fs-small); border: 1px solid #cdd6e2; background: #fff;
+  color: #445; border-radius: 6px; padding: 3px 9px; cursor: pointer;
+}
+.tile-sort-toggle.active { background: #2d6ab0; color: #fff; border-color: #2d6ab0; }
+.tile-sort-hint { font-size: var(--fs-small); color: #778; margin: 4px 0 8px; }
+.tile-sort-bar { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
+.wpkpi-cluster-liste { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.wpkpi-cluster-liste > .sortable-cell { display: block; }
+.wpkpi-cluster-liste > .sortable-cell > * { display: block; }
+.ww-tooltip-energie { margin-top: 3px; padding-top: 3px; border-top: 1px solid #e2e8f0; }
+
+/* extHems: Datenbereitstellung an externes HEMS */
+.exthems-config { margin-top: 8px; }
+.exthems-h4 { font-size: var(--fs-h4); margin: 16px 0 6px; color: #223; }
+.exthems-palette { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.exthems-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-small); background: #eef3fa; border: 1px solid #cdd9e8;
+  color: #2a3b52; border-radius: 14px; padding: 3px 10px; white-space: nowrap;
+}
+.exthems-chip.draggable { cursor: grab; }
+.exthems-chip.draggable:active { cursor: grabbing; }
+.exthems-chip.assigned { background: #e6f2e6; border-color: #b7d9b7; color: #274b27; }
+.exthems-unit { font-size: var(--fs-tiny); color: #778; }
+.exthems-chip-x {
+  border: none; background: transparent; color: #a44; cursor: pointer;
+  font-size: var(--fs-body); line-height: 1; padding: 0 0 0 2px;
+}
+.exthems-topic {
+  border: 1px dashed #cdd6e2; border-radius: 8px; padding: 8px; margin: 8px 0;
+  background: #fafbfd;
+}
+.exthems-topic-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.exthems-topic-input { flex: 1 1 220px; min-width: 0; }
+.exthems-retain { font-size: var(--fs-small); display: inline-flex; align-items: center; gap: 4px; }
+.exthems-topic-groessen {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+  min-height: 30px; padding: 4px; border-radius: 6px; background: #fff;
+  border: 1px solid #eef1f5;
+}
+.exthems-formel { border: 1px solid #e3e8ef; border-radius: 8px; padding: 8px; margin: 6px 0; }
+.exthems-formel-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.exthems-formel-input { flex: 1 1 auto; min-width: 0; font-family: monospace; }
+.exthems-formel-ok { font-size: var(--fs-small); color: #2a7d2a; }
+.exthems-formel-err { font-size: var(--fs-small); color: #b4433a; }
+.exthems-beschreibung {
+  width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 8px;
+  font-family: monospace; font-size: var(--fs-small); white-space: pre;
+}
+
+/* EEBUS-Netzsteuerungsseite */
+.eebus-status-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.eebus-badge {
+  font-size: var(--fs-small); border-radius: 12px; padding: 3px 12px;
+  background: #eef1f5; color: #556; border: 1px solid #d6dde6;
+}
+.eebus-badge.on { background: #e6f4e6; color: #245b24; border-color: #b7d9b7; }
+.eebus-badge.warn { background: #fdf3e3; color: #8a5a12; border-color: #ecd3a5; }
+.eebus-badge.alarm { background: #fbe6e6; color: #a4302a; border-color: #e6b3b0; }
+.eebus-h4 { font-size: var(--fs-h4); margin: 16px 0 6px; color: #223; }
+.eebus-para { font-size: var(--fs-tiny); color: #889; font-weight: 400; }
+.eebus-limit-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.eebus-limit-card {
+  flex: 1 1 220px; min-width: 0; border: 1px solid #dde3ec; border-radius: 10px;
+  padding: 12px; background: #fafbfd;
+}
+.eebus-limit-card.aktiv { border-color: #d9a34f; background: #fdf6ea; }
+.eebus-limit-titel { font-size: var(--fs-body); font-weight: 600; color: #223; }
+.eebus-limit-wert { font-size: var(--fs-kpi); font-weight: 600; color: #8a5a12; margin: 4px 0; }
+.eebus-limit-sub { font-size: var(--fs-tiny); color: #778; }
+.eebus-limit-inaktiv { font-size: var(--fs-small); color: #8a9; margin-top: 6px; }
+.eebus-fs-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.eebus-fs-grid > div { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; }
+.eebus-fs-titel { font-size: var(--fs-small); font-weight: 600; color: #445; margin-bottom: 2px; }
+.eebus-sim-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.eebus-sim-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.eebus-log-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--fs-table); margin-top: 8px; }
+.eebus-log-table th, .eebus-log-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #eef1f5; vertical-align: top; overflow-wrap: anywhere; }
+.eebus-log-table th { font-size: var(--fs-small); color: #667; }
+/* Die Ereignis-Spalte (letzte) trägt die langen Meldungen; die übrigen schmal. */
+.eebus-log-table th:nth-child(1), .eebus-log-table td:nth-child(1) { width: 8.5rem; }
+.eebus-log-table th:nth-child(2), .eebus-log-table td:nth-child(2) { width: 6rem; }
+.eebus-log-table th:nth-child(3), .eebus-log-table td:nth-child(3) { width: 5rem; }
+.eebus-log-limit td { background: #fdfaf3; }
+.eebus-log-failsafe td { background: #fbeeee; }
+.eebus-log-verbindung td { background: #eef4fb; }
+.eebus-ski { font-family: monospace; font-size: var(--fs-small); word-break: break-all; }
+
+/* §9-Umsetzung (Growatt-Ansteuerung) */
+.lpp-scharf-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tile-sort-toggle.lpp-scharf { background: #b4433a; color: #fff; border-color: #b4433a; }
+.lpp-warnung { font-size: var(--fs-small); color: #b4433a; }
+.lpp-reg-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.lpp-reg-grid > div { display: flex; flex-direction: column; gap: 3px; }
+.lpp-reg-grid input { max-width: 100px; }
+.lpp-testmsg { font-family: monospace; }
+
+/* §9 WR-Liste (Live-Regelung) */
+.lpp-regel-status { background: #fdf6ea; border: 1px solid #e8d3a8; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: var(--fs-small); color: #7a5512; }
+.lpp-wr-card { border: 1px solid #dde3ec; border-radius: 8px; padding: 10px; margin: 8px 0; background: #fafbfd; }
+.lpp-wr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.lpp-wr-nr { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #5b7ba5; color: #fff; font-size: var(--fs-small); font-weight: 600; }
+.lpp-wr-typ { font-size: var(--fs-tiny); color: #778; }
+.lpp-move { border: 1px solid #cdd6e2; background: #fff; border-radius: 4px; cursor: pointer; padding: 1px 6px; font-size: var(--fs-tiny); }
+.lpp-move:disabled { opacity: 0.3; cursor: default; }
+.lpp-wr-test { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.lpp-wr-soll { font-size: var(--fs-small); color: #7a5512; }
+.lpp-add-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.lpp-auto-badge { font-size: var(--fs-tiny); background: #e6f2e6; color: #2a6b2a; border: 1px solid #b7d9b7; border-radius: 8px; padding: 1px 7px; }
+
+/* §14a-Überwachung (SteuVE) */
+.lpc-mon-box { border: 1px solid #dde3ec; border-radius: 10px; padding: 12px; margin: 10px 0; background: #fafbfd; }
+.lpc-mon-calc { border: 1px solid #dde3ec; border-radius: 10px; padding: 12px; margin: 10px 0; background: #f7f9fc; }
+.lpc-mon-calc-head { font-size: var(--fs-small); color: #667; font-weight: 600; margin-bottom: 4px; }
+.lpc-mon-calc-val { font-size: var(--fs-body); margin-bottom: 2px; }
+.lpc-mon-calc-diff.ok { color: #2e7d32; }
+.lpc-mon-calc-diff.warn { color: #c0152f; }
+.lpc-mon-calc-formel { font-family: ui-monospace, monospace; font-size: var(--fs-small); color: #445; background: #eef2f8; border-radius: 6px; padding: 4px 8px; display: inline-block; margin: 2px 0 4px; }
+.lpc-mon-box.lpc-ok { border-color: #b7d9b7; background: #f2f9f2; }
+.lpc-mon-box.lpc-warnung { border-color: #ecd3a5; background: #fdf6ea; }
+.lpc-mon-box.lpc-ueberschreitung { border-color: #e6b3b0; background: #fbeeee; }
+.lpc-mon-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); }
+.lpc-ampel { width: 14px; height: 14px; border-radius: 50%; display: inline-block; background: #aab; }
+.lpc-ampel-ok { background: #4caf50; }
+.lpc-ampel-warnung { background: #e0a022; }
+.lpc-ampel-ueberschreitung { background: #d9534f; }
+.lpc-ampel-kein-limit { background: #aab; }
+.lpc-mon-zahlen { font-size: var(--fs-small); color: #445; margin-top: 6px; }
+.lpc-mon-bar { height: 10px; border-radius: 5px; background: #e8ecf1; overflow: hidden; margin-top: 6px; }
+.lpc-mon-fill { height: 100%; transition: width 0.4s; }
+.lpc-fill-ok { background: #4caf50; }
+.lpc-fill-warnung { background: #e0a022; }
+.lpc-fill-ueberschreitung { background: #d9534f; }
+.lpc-fill-kein-limit { background: #aab; }
+.lpc-mon-einzel { font-size: var(--fs-tiny); color: #778; margin-top: 6px; }
+.lpc-steuve-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }

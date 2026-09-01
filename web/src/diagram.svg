@@ -1,0 +1,127 @@
+<?xml version="1.0"?><svg width="2173" height="2551" viewBox="0 0 2240.001 2629.636" version="1.1" id="svg42" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg">
+  <defs id="defs-flows">
+    
+    <g id="flow-yellow">
+      <path d="M 513.601,925.334 562.601,964.834 h 255.209 c 151,0 273,-122 273,-272 v -305 l -39.5,47 -39.5,-47 v 305 c 0,106 -87,193 -194,193 H 562.601 Z" fill="#ffc000"></path>
+    </g>
+    <g id="flow-green">
+      <path d="M 1759.146,925.334 1710.146,964.834 H 1530.81 c -151,0 -273,-122 -273,-272 v -305 l 39.5,47 39.5,-47 v 305 c 0,106 87,193 194,193 h 179.336 z" fill="#76b500"></path>
+    </g>
+    <g id="flow-grey-left">
+      <path d="M 513.601,1090.334 562.601,1050.834 h 255.209 c 151,0 273,122 273,272 v 306 l -39.5,-47 -39.5,47 v -306 c 0,-107 -86,-193 -193,-193 H 562.601 Z" fill="#595959"></path>
+    </g>
+    <g id="flow-grey-right">
+      <path d="M 1757.518,1172.334 1708.518,1132.834 H 1448.810 a 190,190 0 0 0 -190,190 v 306 l 39.5,-47 39.5,47 v -306 a 111,111 0 0 1 111,-111 h 260.708 z" fill="#595959"></path>
+    </g>
+    <g id="flow-lightgrey">
+      <path d="m 1093.81,387.834 39.5,47 39.5,-47 v 1194.132 l -39.5,48 -39.5,-48 z" fill="#bfbfbf"></path>
+    </g>
+    <g id="flow-orange-main">
+      <path d="m 1175.81,387.834 39.5,47 39.5,-47 V 2201.8215 l -39.5,66.5606 -39.5,-66.5606 z" fill="#ff6600"></path>
+      <path d="M 1754.93,1050.834 H 1448.81 c -151,0 -273,122 -273,272 V 1500 h 79 v -177.166 c 0,-107 86,-193 193,-193 H 1754.93 l -48,-39.5 z" fill="#ff6600"></path>
+    </g>
+    <g id="flow-grey-bottom">
+      <path d="m 1093.81,1900 h 79 v 301.8215 l -39.5,66.5606 -39.5,-66.5606 z" fill="#595959"></path>
+    </g>
+    <g id="flow-darkgreen">
+      <path d="m 513.601,1007.834 49,40 h 1191 l -46,-40 46,-40 h -1191 z" fill="#336600"></path>
+    </g>
+
+    <g id="icon-pv">
+      <path d="M50 18 L93 56 H83 V83 H17 V56 H7 Z" fill="#ffffff"></path>
+      <path d="M50 31 L72 50 H28 Z" fill="#31691A"></path>
+      <path d="M50 31 V50 M39 41 H61" fill="none" stroke="#ffffff" stroke-width="3.4" stroke-linecap="round"></path>
+      <rect x="43" y="64" width="14" height="19" rx="1" fill="#31691A"></rect>
+    </g>
+    <g id="icon-socket">
+      <rect x="14" y="14" width="72" height="72" rx="18" fill="#ffffff"></rect>
+      <circle cx="50" cy="50" r="25" fill="#31691A"></circle>
+      <circle cx="40" cy="50" r="5.4" fill="#ffffff"></circle>
+      <circle cx="60" cy="50" r="5.4" fill="#ffffff"></circle>
+      <rect x="42" y="27" width="16" height="5" rx="2.5" fill="#ffffff"></rect>
+      <rect x="42" y="68" width="16" height="5" rx="2.5" fill="#ffffff"></rect>
+    </g>
+    <g id="icon-tank">
+      <rect x="28" y="18" width="42" height="66" rx="12" fill="#ffffff"></rect>
+      <path d="M35 44 H63 V70 a6 6 0 0 1 -6 6 H41 a6 6 0 0 1 -6 -6 Z" fill="#31691A"></path>
+      <path d="M37 56 q6.5 -7 13 0 t13 0 M37 68 q6.5 -7 13 0 t13 0" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"></path>
+      <path d="M37 33 H63" fill="none" stroke="#31691A" stroke-width="4" stroke-linecap="round"></path>
+      <rect x="14" y="29" width="12" height="5" rx="2.5" fill="#ffffff"></rect>
+      <rect x="14" y="71" width="12" height="5" rx="2.5" fill="#ffffff"></rect>
+    </g>
+    <g id="icon-battery">
+      <rect x="10" y="29" width="68" height="42" rx="12" fill="#ffffff"></rect>
+      <rect x="80" y="41" width="9" height="18" rx="4" fill="#ffffff"></rect>
+      <rect x="19" y="38" width="50" height="24" rx="5" fill="#31691A"></rect>
+      <rect x="24" y="43" width="26" height="14" rx="2" fill="#ffffff"></rect>
+    </g>
+    <g id="icon-grid">
+      <path d="M43 10 H57 L72 90 H63 L50 22 L37 90 H28 Z" fill="#ffffff"></path>
+      <rect x="26" y="30" width="48" height="6" rx="3" fill="#ffffff"></rect>
+      <rect x="31" y="50" width="38" height="6" rx="3" fill="#ffffff"></rect>
+      <path d="M43 38 L57 48 M57 38 L43 48" fill="none" stroke="#31691A" stroke-width="4" stroke-linecap="round"></path>
+      <rect x="27" y="36" width="5" height="8" rx="2" fill="#31691A"></rect>
+      <rect x="68" y="36" width="5" height="8" rx="2" fill="#31691A"></rect>
+    </g>
+    <g id="icon-households">
+      <path d="M72 33 L95 53 H88 V80 H58 V53 H49 Z" fill="#31691A"></path>
+      <path d="M34 38 L64 63 H55 V83 H13 V63 H4 Z" fill="#ffffff"></path>
+      <text x="71" y="28" fill="#ffffff" font-family="Verdana, sans-serif" font-size="19" font-weight="700" text-anchor="middle">§42c</text>
+    </g>
+  </defs>
+
+  
+  <g id="flows">
+    <use xlink:href="#flow-yellow" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-yellow"></use>
+
+    <use xlink:href="#flow-green" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-green"></use>
+
+    <use xlink:href="#flow-grey-left" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-grey-left"></use>
+
+    <use xlink:href="#flow-grey-right" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-grey-right"></use>
+
+    <use xlink:href="#flow-lightgrey" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-lightgrey"></use>
+
+    <use xlink:href="#flow-orange-main" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-orange-main"></use>
+
+    <use xlink:href="#flow-grey-bottom" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-grey-bottom"></use>
+
+    <use xlink:href="#flow-darkgreen" stroke="#000000" stroke-width="2"></use>
+    <use xlink:href="#flow-darkgreen"></use>
+  </g>
+
+  
+  <g id="nodes">
+    <g id="node-pv">
+      <circle cx="1174.712" cy="203.564" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-pv" transform="translate(1174.712,203.564) scale(2.6) translate(-50,-50)" stroke="#000000" stroke-width="0.75"></use>
+    </g>
+    <g id="node-consumption">
+      <circle cx="305.601" cy="1004.834" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-socket" transform="translate(305.601,1004.834) scale(2.6) translate(-50,-50)" stroke="#000000" stroke-width="0.75"></use>
+    </g>
+    <g id="node-tank">
+      <circle cx="1967.650" cy="224.974" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-tank" transform="translate(1967.650,224.974) scale(2.6) translate(-50,-50)" stroke="#000000" stroke-width="0.75"></use>
+    </g>
+    <g id="node-battery">
+      <circle cx="1966.539" cy="1030.636" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-battery" transform="translate(1966.539,1030.636) scale(2.6) translate(-50,-50)" stroke="#000000" stroke-width="0.75"></use>
+    </g>
+    <g id="node-grid">
+      <circle cx="1176.787" cy="1800.985" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-grid" transform="translate(1176.787,1800.985) scale(2.6) translate(-50,-50)" stroke="#000000" stroke-width="0.75"></use>
+    </g>
+    <g id="node-households">
+      <circle cx="1173.447" cy="2439.486" r="164" fill="#76B82A" stroke="#000000" stroke-width="2"></circle>
+      <use xlink:href="#icon-households" transform="translate(1173.447,2439.486) scale(2.35) translate(-50,-50)" stroke="#000000" stroke-width="0.83"></use>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+{
+  "name": "hems-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --disable-warning=ExperimentalWarning --max-old-space-size=2048 src/index.ts",
+    "build": "tsc && cp src/emu_profiles.json dist/emu_profiles.json",
+    "start": "node --disable-warning=ExperimentalWarning --max-old-space-size=2048 dist/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsmodbus": "^4.0.10",
+    "mqtt": "^5.15.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
