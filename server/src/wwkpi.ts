@@ -43,12 +43,18 @@ export function aktuelleSpeicherWaerme(): { kwh: number | null; tankUp: number |
 // Schwelle, ab der ein Tageseinsatz einer Erzeugungsart als "aktiv" gilt (kWh).
 // Verhindert, dass Mess-/Standby-Rauschen als Erzeugungstag gezählt wird.
 const AKTIV_KWH = 0.05;
+// Schwelle (mittlere Watt je Viertelstunde), ab der die Solarkreis-Pumpe als
+// LAUFEND gilt. Muss deutlich über dem Standby-Verbrauch (~4-5 W) liegen, damit
+// Standby nicht als aktiver Solar-Tag zählt. Eine laufende Pumpe zieht typisch
+// 30-60 W, daher ist 6 W ein Trennwert knapp uber dem beobachteten Standby (max. 5 W).
+const SOLAR_LAUF_W = 6;
 
 export interface WwKpi {
   von: string; bis: string;
   tageGesamt: number;        // Tage mit irgendeiner WW-Erzeugung
+  kalendertage: number;      // Kalendertage im Zeitraum (bis max. heute) – Basis der Prozent-KPI
   tageWp: number; tageHeizstab: number; tageSolar: number;
-  anteilWp: number; anteilHeizstab: number; anteilSolar: number; // % der Erzeugungstage
+  anteilWp: number; anteilHeizstab: number; anteilSolar: number; // % der Kalendertage im Zeitraum
   energieHeizstabKwh: number; // elektrische Energie Heizstab
   energieWpKwh: number;       // elektrische Energie WP für Warmwasser
   energieSolarKwh: number;    // erfasster Pumpenstrom Solarthermie
@@ -117,8 +123,8 @@ function zuIntervallen(punkte: Array<{ ts: number; aktiv: boolean }>, luecke: nu
 //  - Wärmepumpe: feine Reihe _ElektrischW aus wp_data, aber nur im
 //    Warmwasserbetrieb (_ModusCode == 2), Schwelle > 50 W.
 //  - Heizstab: 15-min-Verbräuche, mittlere Leistung > 200 W.
-//  - Solarthermie: 15-min-Verbräuche, mittlere Leistung > 8 W (Pumpe läuft;
-//    Standby ~5 W).
+//  - Solarthermie: 15-min-Verbräuche, mittlere Leistung > SOLAR_LAUF_W (Pumpe
+//    läuft; Standby ~4-5 W wird so nicht als aktiv gezählt).
 export function warmwasserAktivitaet(vonTs: string, bisTs: string): WwAktivitaet {
   // Wärmepumpe (Warmwasserbetrieb): Modus aus wp_data, Leistung aus der
   // separaten Reihe wp_power. Für jeden Leistungspunkt wird der zuletzt bekannte
@@ -166,7 +172,7 @@ export function warmwasserAktivitaet(vonTs: string, bisTs: string): WwAktivitaet
   return {
     wp: zuIntervallen(wpPunkte, WP_LUECKE, 0),
     heizstab: zuIntervallen(punkteFuer(heizstabIds(), 200), VS, VS),
-    solar: zuIntervallen(punkteFuer(solarthermieIds(), 8), VS, VS),
+    solar: zuIntervallen(punkteFuer(solarthermieIds(), SOLAR_LAUF_W), VS, VS),
   };
 }
 
@@ -185,15 +191,25 @@ export function computeWwKpi(vonTag: string, bisTag: string): WwKpi {
   }
 
   // Solarthermie: Tage mit Einsatz + erfasste Energie. Gemessen wird der
-  // Stromverbrauch der Solarkreis-Pumpe (die thermisch eingebrachte Solarenergie
-  // ist ohne Wärmemengenzähler nicht ableitbar); dieser Wert wird als
-  // "Energie Solarthermie" ausgewiesen.
+  // Stromverbrauch der Solarkreis-Pumpe. WICHTIG: Die Pumpe hat einen dauerhaften
+  // Standby-Verbrauch (~4-5 W), der sich über 24 h zu ~0,12 kWh summiert – das
+  // läge über einer reinen kWh-Tagesschwelle und würde JEDEN Tag fälschlich als
+  // Solar-Tag zählen. Ein Tag zählt daher nur als aktiv, wenn die Pumpe an dem Tag
+  // TATSÄCHLICH lief, d. h. mindestens eine Viertelstunde die mittlere Leistung
+  // über der Pumpen-Laufschwelle lag (deutlich über Standby).
   const solarTage = new Set<string>();
   let energieSolarKwh = 0;
   for (const id of solarthermieIds()) {
     for (const [tag, kwh] of tagesKwh(id, von, bis)) {
       energieSolarKwh += kwh;
-      if (kwh >= AKTIV_KWH) solarTage.add(tag);
+    }
+    // Aktive Tage aus den Viertelstunden-Spitzen bestimmen.
+    for (const q of db.getConsumerViertelstunden(id, von, bis)) {
+      const w = q.verbrauch * 4000; // kWh/15min -> mittlere Watt
+      if (w > SOLAR_LAUF_W) {
+        const tag = q.ts.slice(0, 10);
+        solarTage.add(tag);
+      }
     }
   }
 
@@ -210,11 +226,24 @@ export function computeWwKpi(vonTag: string, bisTag: string): WwKpi {
   // Menge der Tage, an denen überhaupt Warmwasser erzeugt wurde.
   const alleTage = new Set<string>([...heizstabTage, ...solarTage, ...wpTage]);
   const tageGesamt = alleTage.size;
-  const anteil = (n: number) => (tageGesamt > 0 ? 100 * (n / tageGesamt) : 0);
+  // Für die Prozent-KPI zählt JEDER Kalendertag des gewählten Zeitraums, nicht nur
+  // die Tage mit Erzeugung. Ein laufender Zeitraum wird auf "heute" begrenzt
+  // (zukünftige Tage zählen noch nicht). So ergibt z. B. Solarthermie an 10 von 12
+  // bisher vergangenen Tagen 83 %, nicht 100 %.
+  const heute = new Date().toISOString().slice(0, 10);
+  const bisEffektiv = bisTag > heute ? heute : bisTag;
+  const kalendertage = (() => {
+    const von = new Date(vonTag + "T00:00:00");
+    const bis = new Date(bisEffektiv + "T00:00:00");
+    if (Number.isNaN(von.getTime()) || Number.isNaN(bis.getTime()) || bis < von) return 0;
+    return Math.floor((bis.getTime() - von.getTime()) / 86400000) + 1; // inklusive
+  })();
+  const anteil = (n: number) => (kalendertage > 0 ? 100 * (n / kalendertage) : 0);
 
   return {
     von: vonTag, bis: bisTag,
     tageGesamt,
+    kalendertage,
     tageWp: wpTage.size,
     tageHeizstab: heizstabTage.size,
     tageSolar: solarTage.size,

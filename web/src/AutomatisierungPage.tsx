@@ -13,7 +13,7 @@ type RuleOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
 interface RuleCondition {
   id: string;
-  kind: "metric" | "time" | "sourceActive" | "sourceInactive" | "sourceOffline" | "sourceUnreachable" | "dailyTrigger" | "dailyAtTime" | "tarifMode" | "timerElapsed" | "ctFadeState" | "ruleRunning";
+  kind: "metric" | "time" | "sourceActive" | "sourceInactive" | "sourceOffline" | "sourceUnreachable" | "dailyTrigger" | "dailyAtTime" | "tarifMode" | "timerElapsed" | "ctFadeState" | "ruleRunning" | "hueState" | "ccuState" | "alarmMode" | "ssEvent" | "klimaState" | "valloxState" | "airState" | "prusaState" | "evccState";
   metric?: RuleMetric;
   sourceId?: string;
   op?: RuleOp;
@@ -28,9 +28,212 @@ interface RuleCondition {
   ctFadeExpected?: boolean;
   ruleId?: string;
   ruleRunningExpected?: boolean;
+  hueSourceId?: string; hueServiceId?: string; hueExpectOn?: boolean; hueExpectMotion?: boolean;
+  ccuSourceId?: string; ccuIseId?: string; ccuExpectBool?: boolean; ccuCompare?: "gt" | "lt"; ccuThreshold?: number;
+  alarmSourceId?: string; alarmExpectModus?: "unscharf" | "anwesenheit" | "vollschutz";
+  ssSourceId?: string; ssCam?: number; ssArt?: "motion" | "human" | "vehicle" | "animal";
+  klimaSourceId?: string; klimaExpectPower?: boolean; klimaCompare?: "gt" | "lt"; klimaThreshold?: number;
+  valloxSourceId?: string; valloxExpectPower?: boolean; valloxCompare?: "gt" | "lt"; valloxThreshold?: number;
+  airSourceId?: string; airMetric?: "pm25" | "pm10" | "temperature" | "pressure"; airCompare?: "gt" | "lt"; airThreshold?: number;
+  prusaSourceId?: string; prusaMetric?: "progress" | "printing" | "remainingMin"; prusaCompare?: "gt" | "lt"; prusaThreshold?: number;
+  evccSourceId?: string; evccMetric?: "soc" | "connected" | "charging" | "mode"; evccCompare?: "gt" | "lt"; evccThreshold?: number; evccExpect?: string;
 }
 interface RuleConditionGroup { logic: "and" | "or"; conditions: RuleCondition[]; }
-interface RuleAction { type: "switch" | "notify" | "acspeicher" | "timer" | "ctfade" | "ctnoac"; targetSourceId?: string; channel?: number; switchTo?: "on" | "off" | "toggle"; message?: string; timerMinutes?: number; acMode?: "charge" | "discharge" | "none"; acPowerW?: number; acToSoc?: number; acAfterMode?: "manual" | "selfconsumption" | "trade"; ctFadeOn?: boolean; ctNoAcChargeOn?: boolean; }
+
+// Hue-Untergeräte einmal laden (für Bedingungs-/Aktions-Auswahl). Cache auf
+// Modulebene, damit nicht jede Zeile neu lädt.
+interface HueDev { serviceId: string; deviceId: string; name: string; kind: string; room?: string; sourceId: string; }
+let hueCache: HueDev[] | null = null;
+let hueCachePromise: Promise<HueDev[]> | null = null;
+function useHueDevices(): HueDev[] {
+  const [devs, setDevs] = useState<HueDev[]>(hueCache ?? []);
+  useEffect(() => {
+    if (hueCache) { setDevs(hueCache); return; }
+    if (!hueCachePromise) {
+      hueCachePromise = fetch("/api/hue/devices").then((r) => r.json())
+        .then((j) => { hueCache = j.ok ? (j.devices ?? []) : []; return hueCache as HueDev[]; })
+        .catch(() => { hueCache = []; return hueCache as HueDev[]; });
+    }
+    hueCachePromise.then((d) => setDevs(d ?? []));
+  }, []);
+  return devs;
+}
+
+// Dropdown für Bridge-Quelle + Untergerät, gefiltert nach Art (light/motion).
+function HueGeraetAuswahl({ kinds, sourceId, serviceId, onChange }: {
+  kinds: string[]; sourceId?: string; serviceId?: string;
+  onChange: (sourceId: string, serviceId: string) => void;
+}) {
+  const devs = useHueDevices().filter((d) => kinds.includes(d.kind));
+  return (
+    <select value={serviceId ?? ""} onChange={(e) => {
+      const d = devs.find((x) => x.serviceId === e.target.value);
+      if (d) onChange(d.sourceId, d.serviceId);
+    }}>
+      <option value="">– Gerät wählen –</option>
+      {devs.map((d) => (
+        <option key={d.serviceId} value={d.serviceId}>{d.room ? `${d.room}: ` : ""}{d.name}</option>
+      ))}
+    </select>
+  );
+}
+
+// CCU-Untergeräte laden (Cache auf Modulebene).
+interface CcuDev { id: string; name: string; room?: string; kind: string; datapoint: string; schaltbar?: boolean; sourceId: string; istGruppe?: boolean; }
+let ccuCache: CcuDev[] | null = null;
+let ccuCachePromise: Promise<CcuDev[]> | null = null;
+function useCcuDevices(): CcuDev[] {
+  const [devs, setDevs] = useState<CcuDev[]>(ccuCache ?? []);
+  useEffect(() => {
+    if (ccuCache) { setDevs(ccuCache); return; }
+    if (!ccuCachePromise) {
+      ccuCachePromise = fetch("/api/ccu/devices").then((r) => r.json())
+        .then((j) => { ccuCache = j.ok ? (j.devices ?? []) : []; return ccuCache as CcuDev[]; })
+        .catch(() => { ccuCache = []; return ccuCache as CcuDev[]; });
+    }
+    ccuCachePromise.then((d) => setDevs(d ?? []));
+  }, []);
+  return devs;
+}
+// Dropdown für CCU-Datenpunkte. nurSchaltbar filtert auf schaltbare (für Aktionen).
+function CcuGeraetAuswahl({ nurSchaltbar, iseId, onChange }: {
+  nurSchaltbar?: boolean; iseId?: string; onChange: (sourceId: string, iseId: string, kind: string) => void;
+}) {
+  const devs = useCcuDevices().filter((d) => nurSchaltbar ? d.schaltbar : true);
+  return (
+    <select value={iseId ?? ""} onChange={(e) => {
+      const d = devs.find((x) => x.id === e.target.value);
+      if (d) onChange(d.sourceId, d.id, d.kind);
+    }}>
+      <option value="">– Gerät wählen –</option>
+      {devs.map((d) => (
+        <option key={d.id} value={d.id}>{d.istGruppe ? "▤ Gruppe: " : (d.room ? `${d.room}: ` : "")}{d.name} [{d.datapoint}]</option>
+      ))}
+    </select>
+  );
+}
+// Auswahl einer CCU/HCU-Quelle, die Alarm-Funktionen hat.
+function AlarmQuelleAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [quellen, setQuellen] = useState<Array<{ id: string; modus: string }>>([]);
+  useEffect(() => {
+    fetch("/api/ccu/devices").then((r) => r.json()).then((j) => {
+      if (j.ok && j.alarm) setQuellen(Object.keys(j.alarm).map((id) => ({ id, modus: j.alarm[id].modus })));
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (quellen.length === 1 && sourceId !== quellen[0].id) onChange(quellen[0].id);
+  }, [quellen]);
+  if (quellen.length === 0) return <span className="hint">Keine Alarmanlage gefunden</span>;
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– Alarmanlage –</option>
+      {quellen.map((q) => <option key={q.id} value={q.id}>Alarmanlage ({q.modus})</option>)}
+    </select>
+  );
+}
+// Auswahl einer SecuritySpy-Kamera (Quelle + Kameranummer).
+function KameraAuswahl({ sourceId, cam, onChange }: { sourceId?: string; cam?: number; onChange: (sourceId: string, cam: number) => void }) {
+  const [cams, setCams] = useState<Array<{ sourceId: string; number: number; name: string }>>([]);
+  useEffect(() => {
+    fetch("/api/securityspy/cameras").then((r) => r.json()).then((j) => {
+      if (j?.ok) setCams((j.cameras ?? []).map((c: any) => ({ sourceId: c.sourceId, number: c.number, name: c.name })));
+    }).catch(() => {});
+  }, []);
+  if (cams.length === 0) return <span className="hint">Keine Kameras gefunden</span>;
+  const val = sourceId && cam != null ? `${sourceId}|${cam}` : "";
+  return (
+    <select value={val} onChange={(e) => { const [sid, c] = e.target.value.split("|"); if (sid) onChange(sid, Number(c)); }}>
+      <option value="">– Kamera wählen –</option>
+      {cams.map((c) => <option key={`${c.sourceId}|${c.number}`} value={`${c.sourceId}|${c.number}`}>{c.name}</option>)}
+    </select>
+  );
+}
+// Auswahl einer Lüftungs-Quelle.
+function ValloxAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [devs, setDevs] = useState<Array<{ sourceId: string; label: string }>>([]);
+  useEffect(() => {
+    fetch("/api/vallox/devices").then((r) => r.json()).then((j) => {
+      if (j.ok) setDevs((j.devices ?? []).map((d: any) => ({ sourceId: d.sourceId, label: d.label })));
+    }).catch(() => {});
+  }, []);
+  if (devs.length === 0) return <span className="hint">Keine Lüftungsanlage gefunden</span>;
+  if (devs.length === 1 && sourceId !== devs[0].sourceId) onChange(devs[0].sourceId);
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– Lüftung –</option>
+      {devs.map((d) => <option key={d.sourceId} value={d.sourceId}>{d.label}</option>)}
+    </select>
+  );
+}
+// Auswahl eines Luftsensors.
+function AirAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [devs, setDevs] = useState<Array<{ sourceId: string; label: string }>>([]);
+  useEffect(() => {
+    fetch("/api/air/devices").then((r) => r.json()).then((j) => {
+      if (j.ok) setDevs((j.devices ?? []).map((d: any) => ({ sourceId: d.sourceId, label: d.label })));
+    }).catch(() => {});
+  }, []);
+  if (devs.length === 0) return <span className="hint">Kein Luftsensor gefunden</span>;
+  if (devs.length === 1 && sourceId !== devs[0].sourceId) onChange(devs[0].sourceId);
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– Luftsensor –</option>
+      {devs.map((d) => <option key={d.sourceId} value={d.sourceId}>{d.label}</option>)}
+    </select>
+  );
+}
+
+function PrusaAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [devs, setDevs] = useState<Array<{ sourceId: string; label: string }>>([]);
+  useEffect(() => {
+    fetch("/api/prusa/devices").then((r) => r.json()).then((j) => {
+      if (j.ok) setDevs((j.devices ?? []).map((d: any) => ({ sourceId: d.sourceId, label: d.label })));
+    }).catch(() => {});
+  }, []);
+  if (devs.length === 0) return <span className="hint">Kein 3D-Drucker gefunden</span>;
+  if (devs.length === 1 && sourceId !== devs[0].sourceId) onChange(devs[0].sourceId);
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– 3D-Drucker –</option>
+      {devs.map((d) => <option key={d.sourceId} value={d.sourceId}>{d.label}</option>)}
+    </select>
+  );
+}
+
+function EvccAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [devs, setDevs] = useState<Array<{ sourceId: string; label: string }>>([]);
+  useEffect(() => {
+    fetch("/api/evcc/devices").then((r) => r.json()).then((j) => {
+      if (j.ok) setDevs((j.devices ?? []).map((d: any) => ({ sourceId: d.sourceId, label: d.label })));
+    }).catch(() => {});
+  }, []);
+  if (devs.length === 0) return <span className="hint">Kein Elektroauto (evcc) gefunden</span>;
+  if (devs.length === 1 && sourceId !== devs[0].sourceId) onChange(devs[0].sourceId);
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– Elektroauto –</option>
+      {devs.map((d) => <option key={d.sourceId} value={d.sourceId}>{d.label}</option>)}
+    </select>
+  );
+}
+// Auswahl einer Klimaanlage-Quelle.
+function KlimaAuswahl({ sourceId, onChange }: { sourceId?: string; onChange: (sourceId: string) => void }) {
+  const [devs, setDevs] = useState<Array<{ sourceId: string; label: string }>>([]);
+  useEffect(() => {
+    fetch("/api/klima/devices").then((r) => r.json()).then((j) => {
+      if (j.ok) setDevs((j.devices ?? []).map((d: any) => ({ sourceId: d.sourceId, label: d.label })));
+    }).catch(() => {});
+  }, []);
+  if (devs.length === 0) return <span className="hint">Keine Klimaanlage gefunden</span>;
+  if (devs.length === 1 && sourceId !== devs[0].sourceId) onChange(devs[0].sourceId);
+  return (
+    <select value={sourceId ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">– Klimaanlage –</option>
+      {devs.map((d) => <option key={d.sourceId} value={d.sourceId}>{d.label}</option>)}
+    </select>
+  );
+}
+interface RuleAction { type: "switch" | "notify" | "acspeicher" | "timer" | "ctfade" | "ctnoac" | "hue" | "ccu" | "alarm" | "klima" | "vallox" | "evcc"; targetSourceId?: string; channel?: number; switchTo?: "on" | "off" | "toggle"; message?: string; timerMinutes?: number; acMode?: "charge" | "discharge" | "none"; acPowerW?: number; acToSoc?: number; acAfterMode?: "manual" | "selfconsumption" | "trade"; ctFadeOn?: boolean; ctNoAcChargeOn?: boolean; hueSourceId?: string; hueServiceId?: string; hueSwitchTo?: "on" | "off"; hueBrightness?: number; ccuSourceId?: string; ccuIseId?: string; ccuSwitchTo?: "on" | "off"; ccuAktion?: "switch" | "shutter"; ccuShutter?: "up" | "down" | "stop" | "position"; ccuPosition?: number; alarmSourceId?: string; alarmModus?: "unscharf" | "anwesenheit" | "vollschutz"; klimaSourceId?: string; klimaAktion?: "power" | "temp" | "mode"; klimaPower?: boolean; klimaTemp?: number; klimaMode?: string; valloxSourceId?: string; valloxAktion?: "power" | "speed"; valloxPower?: boolean; valloxSpeed?: number; evccSourceId?: string; evccAktion?: "mode" | "limitsoc"; evccMode?: string; evccLimitSoc?: number; }
 interface AutomationRule {
   id: string;
   name: string;
@@ -99,7 +302,14 @@ function ConditionRow({
   return (
     <div className="rule-cond">
       <span className={`rule-dot rule-dot-${dot}`} title={status === undefined ? "unbekannt" : status ? "erfüllt" : "nicht erfüllt"} />
-      <select value={c.kind} onChange={(e) => onChange({ ...c, kind: e.target.value as RuleCondition["kind"] })}>
+      <select value={c.kind} onChange={(e) => {
+        const k = e.target.value as RuleCondition["kind"];
+        // Beim Umschalten sinnvolle Defaults setzen, damit der angezeigte Default
+        // auch tatsächlich gespeichert ist (sonst greift die Bedingung nie).
+        const extra: Partial<RuleCondition> = {};
+        if (k === "airState") { extra.airMetric = c.airMetric ?? "pm25"; extra.airCompare = c.airCompare ?? "gt"; if (c.airThreshold == null) extra.airThreshold = 0; }
+        onChange({ ...c, kind: k, ...extra });
+      }}>
         <option value="metric">Messwert</option>
         <option value="time">Zeitfenster</option>
         <option value="sourceActive">Quelle aktiviert (Häkchen gesetzt)</option>
@@ -112,6 +322,15 @@ function ConditionRow({
         <option value="timerElapsed">Timer abgelaufen</option>
         <option value="ctFadeState">AC-Ausfaden Zustand</option>
         <option value="ruleRunning">Andere Regel läuft</option>
+        <option value="hueState">Hue-Gerät (Licht/Bewegung)</option>
+        <option value="ccuState">Homematic-Gerät (CCU)</option>
+        <option value="alarmMode">Homematic Alarm-Modus</option>
+        <option value="ssEvent">Kamera-Ereignis (SecuritySpy)</option>
+        <option value="klimaState">Klimaanlage (Zustand)</option>
+        <option value="valloxState">Lüftung (Zustand)</option>
+        <option value="airState">Luftsensor (Messwert)</option>
+        <option value="prusaState">3D-Drucker (Fortschritt/Status)</option>
+        <option value="evccState">Elektroauto (SoC/Modus/Verbindung)</option>
       </select>
 
       {c.kind === "metric" && (
@@ -241,6 +460,223 @@ function ConditionRow({
         </>
       )}
 
+      {c.kind === "hueState" && (
+        <>
+          <HueGeraetAuswahl kinds={["light", "motion"]} sourceId={c.hueSourceId} serviceId={c.hueServiceId}
+            onChange={(sid, svc) => {
+              // Art des gewählten Geräts merken, um das passende Erwartungs-Feld zu setzen.
+              const d = (hueCache ?? []).find((x) => x.serviceId === svc);
+              const patch: Partial<RuleCondition> = { hueSourceId: sid, hueServiceId: svc, hueExpectOn: undefined, hueExpectMotion: undefined };
+              if (d?.kind === "motion") patch.hueExpectMotion = true; else patch.hueExpectOn = true;
+              onChange({ ...c, ...patch });
+            }} />
+          {/* Erwartung je nach Gerätetyp */}
+          {(() => {
+            const d = (hueCache ?? []).find((x) => x.serviceId === c.hueServiceId);
+            if (d?.kind === "motion") {
+              return (
+                <select value={c.hueExpectMotion === false ? "no" : "yes"}
+                  onChange={(e) => onChange({ ...c, hueExpectMotion: e.target.value === "yes" })}>
+                  <option value="yes">Bewegung</option>
+                  <option value="no">keine Bewegung</option>
+                </select>
+              );
+            }
+            return (
+              <select value={c.hueExpectOn === false ? "off" : "on"}
+                onChange={(e) => onChange({ ...c, hueExpectOn: e.target.value === "on" })}>
+                <option value="on">an</option>
+                <option value="off">aus</option>
+              </select>
+            );
+          })()}
+        </>
+      )}
+
+      {c.kind === "ccuState" && (
+        <>
+          <CcuGeraetAuswahl iseId={c.ccuIseId}
+            onChange={(sid, ise, kind) => {
+              const patch: Partial<RuleCondition> = { ccuSourceId: sid, ccuIseId: ise, ccuExpectBool: undefined, ccuThreshold: undefined, ccuCompare: undefined };
+              // Bool-Geräte (Schalter/Kontakt/Bewegung) bekommen Bool-Erwartung, Zahlen einen Schwellwert.
+              if (["switch", "contact", "motion"].includes(kind)) patch.ccuExpectBool = true;
+              else { patch.ccuCompare = "gt"; patch.ccuThreshold = 0; }
+              onChange({ ...c, ...patch });
+            }} />
+          {(() => {
+            const d = (ccuCache ?? []).find((x) => x.id === c.ccuIseId);
+            const istBool = d && ["switch", "contact", "motion"].includes(d.kind);
+            if (istBool) {
+              return (
+                <select value={c.ccuExpectBool === false ? "false" : "true"}
+                  onChange={(e) => onChange({ ...c, ccuExpectBool: e.target.value === "true" })}>
+                  <option value="true">an / offen / Bewegung</option>
+                  <option value="false">aus / geschlossen / keine</option>
+                </select>
+              );
+            }
+            return (
+              <>
+                <select value={c.ccuCompare ?? "gt"} onChange={(e) => onChange({ ...c, ccuCompare: e.target.value as "gt" | "lt" })}>
+                  <option value="gt">größer als</option>
+                  <option value="lt">kleiner als</option>
+                </select>
+                <input type="number" style={{ width: 80 }} value={c.ccuThreshold ?? 0}
+                  onChange={(e) => onChange({ ...c, ccuThreshold: Number(e.target.value) })} />
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {c.kind === "alarmMode" && (
+        <>
+          <AlarmQuelleAuswahl sourceId={c.alarmSourceId} onChange={(sid) => onChange({ ...c, alarmSourceId: sid })} />
+          <select value={c.alarmExpectModus ?? "vollschutz"} onChange={(e) => onChange({ ...c, alarmExpectModus: e.target.value as any })}>
+            <option value="unscharf">ist unscharf</option>
+            <option value="anwesenheit">ist scharf (Anwesenheit)</option>
+            <option value="vollschutz">ist scharf (Vollschutz)</option>
+          </select>
+        </>
+      )}
+
+      {c.kind === "ssEvent" && (
+        <>
+          <KameraAuswahl sourceId={c.ssSourceId} cam={c.ssCam}
+            onChange={(sid, cam) => onChange({ ...c, ssSourceId: sid, ssCam: cam })} />
+          <select value={c.ssArt ?? "motion"} onChange={(e) => onChange({ ...c, ssArt: e.target.value as any })}>
+            <option value="motion">Bewegung erkannt</option>
+            <option value="human">Mensch erkannt (KI)</option>
+            <option value="vehicle">Fahrzeug erkannt (KI)</option>
+            <option value="animal">Tier erkannt (KI)</option>
+          </select>
+        </>
+      )}
+
+      {c.kind === "klimaState" && (
+        <>
+          <KlimaAuswahl sourceId={c.klimaSourceId} onChange={(sid) => onChange({ ...c, klimaSourceId: sid })} />
+          <select value={c.klimaExpectPower != null ? "power" : "temp"}
+            onChange={(e) => { if (e.target.value === "power") onChange({ ...c, klimaExpectPower: true, klimaThreshold: undefined, klimaCompare: undefined }); else onChange({ ...c, klimaExpectPower: undefined, klimaCompare: "gt", klimaThreshold: 24 }); }}>
+            <option value="power">An/Aus-Zustand</option>
+            <option value="temp">Raumtemperatur</option>
+          </select>
+          {c.klimaExpectPower != null ? (
+            <select value={c.klimaExpectPower ? "on" : "off"} onChange={(e) => onChange({ ...c, klimaExpectPower: e.target.value === "on" })}>
+              <option value="on">ist an</option>
+              <option value="off">ist aus</option>
+            </select>
+          ) : (
+            <>
+              <select value={c.klimaCompare ?? "gt"} onChange={(e) => onChange({ ...c, klimaCompare: e.target.value as "gt" | "lt" })}>
+                <option value="gt">wärmer als</option>
+                <option value="lt">kälter als</option>
+              </select>
+              <input type="number" style={{ width: 70 }} value={c.klimaThreshold ?? 24} onChange={(e) => onChange({ ...c, klimaThreshold: Number(e.target.value) })} /> °C
+            </>
+          )}
+        </>
+      )}
+
+      {c.kind === "valloxState" && (
+        <>
+          <ValloxAuswahl sourceId={c.valloxSourceId} onChange={(sid) => onChange({ ...c, valloxSourceId: sid })} />
+          <select value={c.valloxExpectPower != null ? "power" : "speed"}
+            onChange={(e) => { if (e.target.value === "power") onChange({ ...c, valloxExpectPower: true, valloxThreshold: undefined, valloxCompare: undefined }); else onChange({ ...c, valloxExpectPower: undefined, valloxCompare: "gt", valloxThreshold: 3 }); }}>
+            <option value="power">An/Aus-Zustand</option>
+            <option value="speed">Lüfterstufe</option>
+          </select>
+          {c.valloxExpectPower != null ? (
+            <select value={c.valloxExpectPower ? "on" : "off"} onChange={(e) => onChange({ ...c, valloxExpectPower: e.target.value === "on" })}>
+              <option value="on">ist an</option>
+              <option value="off">ist aus</option>
+            </select>
+          ) : (
+            <>
+              <select value={c.valloxCompare ?? "gt"} onChange={(e) => onChange({ ...c, valloxCompare: e.target.value as "gt" | "lt" })}>
+                <option value="gt">höher als</option>
+                <option value="lt">niedriger als</option>
+              </select>
+              <input type="number" min={1} max={8} style={{ width: 60 }} value={c.valloxThreshold ?? 3} onChange={(e) => onChange({ ...c, valloxThreshold: Number(e.target.value) })} />
+            </>
+          )}
+        </>
+      )}
+      {c.kind === "airState" && (
+        <>
+          <AirAuswahl sourceId={c.airSourceId} onChange={(sid) => onChange({ ...c, airSourceId: sid })} />
+          <select value={c.airMetric ?? "pm25"} onChange={(e) => onChange({ ...c, airMetric: e.target.value as any })}>
+            <option value="pm25">Feinstaub PM2.5</option>
+            <option value="pm10">Feinstaub PM10</option>
+            <option value="temperature">Temperatur</option>
+            <option value="pressure">Luftdruck</option>
+          </select>
+          <select value={c.airCompare ?? "gt"} onChange={(e) => onChange({ ...c, airCompare: e.target.value as "gt" | "lt" })}>
+            <option value="gt">größer als</option>
+            <option value="lt">kleiner als</option>
+          </select>
+          <input type="number" style={{ width: 80 }} value={c.airThreshold ?? 0} onChange={(e) => onChange({ ...c, airThreshold: Number(e.target.value) })} />
+          <span className="hint">{c.airMetric === "temperature" ? "°C" : c.airMetric === "pressure" ? "hPa" : "µg/m³"}</span>
+        </>
+      )}
+
+      {c.kind === "prusaState" && (
+        <>
+          <PrusaAuswahl sourceId={c.prusaSourceId} onChange={(sid) => onChange({ ...c, prusaSourceId: sid })} />
+          <select value={c.prusaMetric ?? "progress"} onChange={(e) => onChange({ ...c, prusaMetric: e.target.value as any })}>
+            <option value="progress">Fortschritt (%)</option>
+            <option value="remainingMin">Restzeit (min)</option>
+            <option value="printing">druckt gerade</option>
+          </select>
+          {c.prusaMetric !== "printing" && (
+            <>
+              <select value={c.prusaCompare ?? "gt"} onChange={(e) => onChange({ ...c, prusaCompare: e.target.value as "gt" | "lt" })}>
+                <option value="gt">größer als</option>
+                <option value="lt">kleiner als</option>
+              </select>
+              <input type="number" style={{ width: 80 }} value={c.prusaThreshold ?? 0} onChange={(e) => onChange({ ...c, prusaThreshold: Number(e.target.value) })} />
+              <span className="hint">{c.prusaMetric === "remainingMin" ? "min" : "%"}</span>
+            </>
+          )}
+        </>
+      )}
+
+      {c.kind === "evccState" && (
+        <>
+          <EvccAuswahl sourceId={c.evccSourceId} onChange={(sid) => onChange({ ...c, evccSourceId: sid })} />
+          <select value={c.evccMetric ?? "soc"} onChange={(e) => onChange({ ...c, evccMetric: e.target.value as any })}>
+            <option value="soc">Ladestand (%)</option>
+            <option value="connected">Fahrzeug verbunden</option>
+            <option value="charging">lädt gerade</option>
+            <option value="mode">Lademodus</option>
+          </select>
+          {c.evccMetric === "soc" && (
+            <>
+              <select value={c.evccCompare ?? "gt"} onChange={(e) => onChange({ ...c, evccCompare: e.target.value as "gt" | "lt" })}>
+                <option value="gt">größer als</option>
+                <option value="lt">kleiner als</option>
+              </select>
+              <input type="number" style={{ width: 80 }} value={c.evccThreshold ?? 0} onChange={(e) => onChange({ ...c, evccThreshold: Number(e.target.value) })} />
+              <span className="hint">%</span>
+            </>
+          )}
+          {(c.evccMetric === "connected" || c.evccMetric === "charging") && (
+            <select value={c.evccExpect ?? "true"} onChange={(e) => onChange({ ...c, evccExpect: e.target.value })}>
+              <option value="true">ja</option>
+              <option value="false">nein</option>
+            </select>
+          )}
+          {c.evccMetric === "mode" && (
+            <select value={c.evccExpect ?? "pv"} onChange={(e) => onChange({ ...c, evccExpect: e.target.value })}>
+              <option value="off">Aus</option>
+              <option value="pv">PV</option>
+              <option value="minpv">Min+PV</option>
+              <option value="now">Schnell</option>
+            </select>
+          )}
+        </>
+      )}
+
       <button className="rule-del-cond" onClick={onDelete} title="Bedingung löschen">✕</button>
     </div>
   );
@@ -317,6 +753,12 @@ function ActionEditor({ action, sources, acSpeicher, onChange, allowEmpty, onCle
         <option value="timer">Timer starten</option>
         <option value="ctfade">AC-Speicher ausfaden (CT auf 0)</option>
         <option value="ctnoac">AC-Speicher kein AC-Laden (CT ≥ 0)</option>
+        <option value="hue">Hue-Leuchte schalten</option>
+        <option value="ccu">Homematic-Gerät schalten (CCU)</option>
+        <option value="alarm">Homematic Alarm-Modus setzen</option>
+        <option value="klima">Klimaanlage steuern</option>
+        <option value="vallox">Lüftung steuern</option>
+        <option value="evcc">Elektroauto steuern</option>
       </select>
       {a.type === "switch" && (
         <>
@@ -336,6 +778,129 @@ function ActionEditor({ action, sources, acSpeicher, onChange, allowEmpty, onCle
             <option value="off">ausschalten</option>
             <option value="toggle">umschalten</option>
           </select>
+        </>
+      )}
+      {a.type === "hue" && (
+        <>
+          <HueGeraetAuswahl kinds={["light"]} sourceId={a.hueSourceId} serviceId={a.hueServiceId}
+            onChange={(sid, svc) => onChange({ ...a, hueSourceId: sid, hueServiceId: svc })} />
+          <select value={a.hueSwitchTo ?? "on"} onChange={(e) => onChange({ ...a, hueSwitchTo: e.target.value as "on" | "off" })}>
+            <option value="on">einschalten</option>
+            <option value="off">ausschalten</option>
+          </select>
+          {a.hueSwitchTo !== "off" && (
+            <input type="number" min={1} max={100} placeholder="Helligkeit %" style={{ width: 90 }}
+              value={a.hueBrightness ?? ""} onChange={(e) => onChange({ ...a, hueBrightness: e.target.value === "" ? undefined : Number(e.target.value) })} />
+          )}
+        </>
+      )}
+      {a.type === "ccu" && (
+        <>
+          <CcuGeraetAuswahl nurSchaltbar iseId={a.ccuIseId}
+            onChange={(sid, ise, kind) => {
+              const istShutter = kind === "shutter";
+              onChange({ ...a, ccuSourceId: sid, ccuIseId: ise,
+                ccuAktion: istShutter ? "shutter" : "switch",
+                ccuShutter: istShutter ? "down" : undefined });
+            }} />
+          {(() => {
+            const d = (ccuCache ?? []).find((x) => x.id === a.ccuIseId);
+            const istShutter = a.ccuAktion === "shutter" || d?.kind === "shutter";
+            if (istShutter) {
+              return (
+                <>
+                  <select value={a.ccuShutter ?? "down"} onChange={(e) => onChange({ ...a, ccuAktion: "shutter", ccuShutter: e.target.value as any })}>
+                    <option value="up">hochfahren (auf)</option>
+                    <option value="down">runterfahren (zu)</option>
+                    <option value="stop">stoppen</option>
+                    <option value="position">Position setzen</option>
+                  </select>
+                  {a.ccuShutter === "position" && (
+                    <input type="number" min={0} max={100} style={{ width: 80 }} placeholder="%"
+                      value={a.ccuPosition ?? 0} onChange={(e) => onChange({ ...a, ccuPosition: Number(e.target.value) })} />
+                  )}
+                </>
+              );
+            }
+            return (
+              <select value={a.ccuSwitchTo ?? "on"} onChange={(e) => onChange({ ...a, ccuAktion: "switch", ccuSwitchTo: e.target.value as "on" | "off" })}>
+                <option value="on">einschalten</option>
+                <option value="off">ausschalten</option>
+              </select>
+            );
+          })()}
+        </>
+      )}
+      {a.type === "alarm" && (
+        <>
+          <AlarmQuelleAuswahl sourceId={a.alarmSourceId} onChange={(sid) => onChange({ ...a, alarmSourceId: sid })} />
+          <select value={a.alarmModus ?? "vollschutz"} onChange={(e) => onChange({ ...a, alarmModus: e.target.value as any })}>
+            <option value="unscharf">unscharf schalten</option>
+            <option value="anwesenheit">scharf (Anwesenheit)</option>
+            <option value="vollschutz">scharf (Vollschutz)</option>
+          </select>
+        </>
+      )}
+      {a.type === "klima" && (
+        <>
+          <KlimaAuswahl sourceId={a.klimaSourceId} onChange={(sid) => onChange({ ...a, klimaSourceId: sid })} />
+          <select value={a.klimaAktion ?? "power"} onChange={(e) => onChange({ ...a, klimaAktion: e.target.value as any })}>
+            <option value="power">Ein-/Ausschalten</option>
+            <option value="temp">Temperatur setzen</option>
+            <option value="mode">Modus setzen</option>
+          </select>
+          {(a.klimaAktion ?? "power") === "power" && (
+            <select value={a.klimaPower === false ? "off" : "on"} onChange={(e) => onChange({ ...a, klimaPower: e.target.value === "on" })}>
+              <option value="on">einschalten</option>
+              <option value="off">ausschalten</option>
+            </select>
+          )}
+          {a.klimaAktion === "temp" && (
+            <input type="number" min={16} max={31} style={{ width: 70 }} value={a.klimaTemp ?? 22} onChange={(e) => onChange({ ...a, klimaTemp: Number(e.target.value) })} />
+          )}
+          {a.klimaAktion === "mode" && (
+            <select value={a.klimaMode ?? "COOL"} onChange={(e) => onChange({ ...a, klimaMode: e.target.value })}>
+              {["AUTO", "HEAT", "COOL", "DRY", "FAN_ONLY"].map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          )}
+        </>
+      )}
+      {a.type === "vallox" && (
+        <>
+          <ValloxAuswahl sourceId={a.valloxSourceId} onChange={(sid) => onChange({ ...a, valloxSourceId: sid })} />
+          <select value={a.valloxAktion ?? "power"} onChange={(e) => onChange({ ...a, valloxAktion: e.target.value as any })}>
+            <option value="power">Ein-/Ausschalten</option>
+            <option value="speed">Stufe setzen</option>
+          </select>
+          {(a.valloxAktion ?? "power") === "power" && (
+            <select value={a.valloxPower === false ? "off" : "on"} onChange={(e) => onChange({ ...a, valloxPower: e.target.value === "on" })}>
+              <option value="on">einschalten</option>
+              <option value="off">ausschalten</option>
+            </select>
+          )}
+          {a.valloxAktion === "speed" && (
+            <input type="number" min={1} max={8} style={{ width: 60 }} value={a.valloxSpeed ?? 3} onChange={(e) => onChange({ ...a, valloxSpeed: Number(e.target.value) })} />
+          )}
+        </>
+      )}
+      {a.type === "evcc" && (
+        <>
+          <EvccAuswahl sourceId={a.evccSourceId} onChange={(sid) => onChange({ ...a, evccSourceId: sid })} />
+          <select value={a.evccAktion ?? "mode"} onChange={(e) => onChange({ ...a, evccAktion: e.target.value as any })}>
+            <option value="mode">Lademodus setzen</option>
+            <option value="limitsoc">Ladelimit setzen</option>
+          </select>
+          {(a.evccAktion ?? "mode") === "mode" && (
+            <select value={a.evccMode ?? "pv"} onChange={(e) => onChange({ ...a, evccMode: e.target.value })}>
+              <option value="off">Aus</option>
+              <option value="pv">PV</option>
+              <option value="minpv">Min+PV</option>
+              <option value="now">Schnell</option>
+            </select>
+          )}
+          {a.evccAktion === "limitsoc" && (
+            <><input type="number" min={0} max={100} step={5} style={{ width: 70 }} value={a.evccLimitSoc ?? 80} onChange={(e) => onChange({ ...a, evccLimitSoc: Number(e.target.value) })} /><span className="hint">%</span></>
+          )}
         </>
       )}
       {a.type === "notify" && (
@@ -419,7 +984,7 @@ function ActionEditor({ action, sources, acSpeicher, onChange, allowEmpty, onCle
 // Verwaltet eine Liste von Aktionen (mehrere möglich): jede über einen
 // ActionEditor, mit „+ Aktion"-Knopf und Entfernen je Zeile. Alle Aktionen der
 // Liste werden bei der jeweiligen Phase (Ein-/Ausschalten) ausgeführt.
-function ActionListEditor({ title, phase, actions, sources, acSpeicher, onChange, actionStatus }: {
+export function ActionListEditor({ title, phase, actions, sources, acSpeicher, onChange, actionStatus }: {
   title: string;
   phase: "on" | "off";
   actions: RuleAction[];
@@ -493,10 +1058,6 @@ function RuleCard({ rule, sources, acSpeicher, consumers, ruleList, onChange, on
         <label className="rule-arm">
           <input type="checkbox" checked={rule.enabled} onChange={(e) => onChange({ ...rule, enabled: e.target.checked })} />
           scharf
-        </label>
-        <label className="rule-arm" title="Diese Regel als Kachel auf der Übersichtsseite anzeigen (nur während sie läuft)">
-          <input type="checkbox" checked={rule.showOnOverview === true} onChange={(e) => onChange({ ...rule, showOnOverview: e.target.checked })} />
-          Übersicht
         </label>
         <button className="rule-expand" onClick={() => setOpen((o) => !o)}>{open ? "▲" : "▼"}</button>
         <button className="rule-del" onClick={onDelete} title="Regel löschen">🗑</button>

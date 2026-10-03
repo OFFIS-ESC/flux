@@ -7,6 +7,7 @@ import { DateNav } from "./DateNav";
 import { ChartHoverLayer } from "./ChartHoverLayer";
 import { profileLabel } from "./profileLabels";
 import type { FullState } from "./types";
+import { ChartDownloadButton } from "./ChartDownloadButton";
 
 interface ProfileInfo {
   name: string;
@@ -236,7 +237,7 @@ export function LastprofilePage({ state }: { state: FullState }) {
 
       {/* Visualisierung */}
       <section className="card">
-        <h3>Lastgang-Visualisierung</h3>
+        <div className="chart-kopf"><h3>Lastgang-Visualisierung</h3><ChartDownloadButton dateiname="lastprofil" /></div>
         <p className="hint">
           Vorschau des gewählten Profils für den ausgewählten Tag, skaliert auf
           den eingegebenen Jahresverbrauch. Das Profil erkennt automatisch den

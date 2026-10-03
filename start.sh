@@ -39,6 +39,7 @@ if [ ! -f "web/dist/index.html" ]; then
 fi
 
 echo "==> Starte FLUX-Server (Oberfläche danach unter http://localhost:3000)."
+echo "    (Eingebauter MQTT-Broker läuft lokal auf Port 1883, ohne Anmeldung.)"
 echo "    Strg+C beendet den Server."
 
 # EEBUS-Sidecar (optional) vor dem Server im Hintergrund starten.

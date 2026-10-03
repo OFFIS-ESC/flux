@@ -6,6 +6,7 @@ import { nf } from "./chartUtils";
 import { DateNav } from "./DateNav";
 import { ChartHoverLayer } from "./ChartHoverLayer";
 import type { FullState } from "./types";
+import { ChartDownloadButton } from "./ChartDownloadButton";
 
 interface ProfileInfo {
   name: string;
@@ -242,7 +243,7 @@ export function ErzeugerprofilePage({ state }: { state: FullState }) {
       {/* Visualisierung */}
       {selected && (
         <section className="card">
-          <h3>Erzeugungsgang-Visualisierung</h3>
+          <div className="chart-kopf"><h3>Erzeugungsgang-Visualisierung</h3><ChartDownloadButton dateiname="erzeugerprofil" /></div>
           <p className="hint">
             Vorschau des gewählten Erzeugungsprofils für den ausgewählten Tag,
             skaliert auf die eingestellte Anlagengröße (kWp). Gezeigt wird die

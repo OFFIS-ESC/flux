@@ -222,74 +222,79 @@ export function HilfeKonfigurationPage() {
       <section className="card">
         <h3>Quellen</h3>
         <p>
-          Unter <strong>Quellen</strong> definierst du jedes Gerät, das Daten
-          liefert. Je Quelle wählst du zunächst die <strong>Anbindung</strong>:
-          Bei <strong>REST-API</strong> gibst du die URL an, unter der die Daten
-          als JSON abgerufen werden; ist der Endpunkt geschützt, kann optional ein
-          <strong> Bearer-Token</strong> als Authentifizierung mitgesendet werden.
-          Bei <strong>MQTT</strong> gibst du Broker-URL und Topic an – die zuletzt
-          empfangene Nachricht wird ausgewertet; als Authentifizierung stehen
-          anonym, Benutzername/Passwort oder ein TLS-Client-Zertifikat zur
-          Auswahl. In beiden Fällen definierst du je Messwert einen JSON-Pfad, der
-          bestimmt, welcher Wert aus der Geräteantwort gelesen wird, samt Einheit
-          und Umrechnungsfaktor. Liefert ein MQTT-Topic nur eine einzelne Zahl,
-          erreichst du sie über den Pfad <code>value</code>. Für AC-Speicher gibt
-          es zusätzlich zwei protokollspezifische Anbindungen (UDP und Modbus
-          TCP), die im Anschluss an die Rollenübersicht im Detail beschrieben
-          sind. Mit der Testfunktion prüfst du, ob Anbindung und Pfade
-          zusammenpassen.
-        </p>
-        <p className="hint">
-          Jede Quelle lässt sich über das Dreieck links in der Kopfzeile{" "}
-          <strong>ein- und ausklappen</strong>; standardmäßig sind alle Quellen
-          eingeklappt, damit die Liste übersichtlich bleibt. Über die{" "}
-          <strong>Schnellauswahl</strong> oben springst du direkt zu einer Quelle –
-          sie wird dabei automatisch aufgeklappt und kurz hervorgehoben. Dasselbe
-          Ein-/Ausklappen gibt es auch auf der Senkenseite.
+          Eine <strong>Quelle</strong> ist jedes Gerät oder jeder Dienst, der
+          Daten liefert – vom Netzzähler über die PV-Anlage bis zum einzelnen
+          Verbraucher. Das Einrichten einer Quelle folgt immer denselben drei
+          Schritten: du wählst die <strong>Anbindung</strong> (wie FLUX die Daten
+          holt), die <strong>Rolle</strong> (wie die Werte in Bilanz und
+          Auswertung eingehen) und – bei generischen Anbindungen – die{" "}
+          <strong>Datenpunkte</strong> (welche Werte aus der Geräteantwort gelesen
+          werden). Jede Quelle lässt sich über das Dreieck links in der Kopfzeile
+          ein- und ausklappen; standardmäßig sind alle eingeklappt, und über die
+          Schnellauswahl oben springst du direkt zu einer Quelle.
         </p>
 
+        <h4>1. Anbindung – wie die Daten kommen</h4>
         <p>
-          Entscheidend ist die <strong>Rolle</strong> einer Quelle – sie legt
-          fest, wie ihre Werte in Bilanz und Auswertung eingehen:
+          Die meisten Geräte werden über eine der beiden{" "}
+          <strong>generischen Anbindungen</strong> gelesen, bei denen du die
+          Datenpunkte selbst per JSON-Pfad festlegst:
         </p>
         <ul className="hilfe-list">
           <li>
-            <strong>Netz (Bezug/Einspeisung):</strong> der Zweirichtungszähler am
-            Netzanschluss. Er liefert die Grundlage für Netzbezug, Einspeisung,
-            Kosten und Autarkie. Drei Kernwerte werden dafür benötigt: die
-            Momentanleistung (Metrik <code>power</code>), der Bezugszähler
-            (<code>gridInTotal</code>, kumulierte kWh) und der Einspeisezähler
-            (<code>gridOutTotal</code>, kumulierte kWh). Aus den beiden
-            Zählerständen werden per Differenzbildung die Tages-, Monats- und
-            Jahreswerte gebildet; die Leistung liefert den Live-Wert auf der
-            Übersicht.
-            <br /><br />
-            Diese drei Kernwerte <strong>müssen vorhanden</strong> sein, dürfen
-            aber auf <strong>mehrere aktive Netz-Quellen verteilt</strong> sein.
-            Es ist also nicht mehr auf genau eine Netz-Quelle beschränkt –
-            entscheidend ist nur, dass jeder einzelne Kernwert von{" "}
-            <strong>genau einer</strong> aktiven Quelle kommt (sonst würde er sich
-            in der Bilanz doppelt aufsummieren). So kann z.&nbsp;B. ein Zähler die
-            genauen Zählerstände liefern und ein zweites, schnelleres Messgerät
-            die Momentanleistung – beide mit der Rolle „Netz". Liefert eine Quelle
-            einen Kernwert nicht (oder soll ihn nicht beisteuern), stellt man das
-            betreffende Feld auf die Metrik <code>info</code>; es wird dann nur
-            angezeigt, aber nicht in die Bilanz übernommen.
-            <br /><br />
-            Alternativ lassen sich zwei Netz-Quellen auch{" "}
-            <strong>verlinken</strong>: Über „Leistung von separater Quelle" kann
-            eine Zähler-Quelle die Momentanleistung von einer anderen (z.&nbsp;B.
-            einem schnellen Leistungsmesser) übernehmen. Die verknüpfte Quelle
-            wird dann nicht separat gezählt, und ihre Werte erscheinen auf der
-            Statusseite integriert bei der Hauptquelle. Beide Wege führen zum
-            selben Ziel – die Verteilung über zwei gleichwertige Netz-Quellen ist
-            meist die einfachere Variante.
+            <strong>REST-API:</strong> Du gibst die URL an, unter der die Daten
+            als JSON abrufbar sind; ist der Endpunkt geschützt, kann ein{" "}
+            <strong>Bearer-Token</strong> mitgesendet werden.
           </li>
           <li>
-            <strong>PV-Erzeugung:</strong> ein Wechselrichter bzw. PV-Strang.
-            Liefert die erzeugte Leistung und den Gesamtertrag; mehrere
-            PV-Quellen werden zur Gesamterzeugung summiert.
+            <strong>MQTT:</strong> Du gibst Broker-URL und Topic an; die zuletzt
+            empfangene Nachricht wird ausgewertet. Als Authentifizierung stehen
+            anonym, Benutzername/Passwort oder ein TLS-Client-Zertifikat zur
+            Wahl. Liefert ein Topic nur eine einzelne Zahl, erreichst du sie über
+            den Pfad <code>value</code>.
           </li>
+        </ul>
+        <p>
+          Bei beiden definierst du je Messwert einen JSON-Pfad samt Einheit und
+          Umrechnungsfaktor, und mit der <strong>Testfunktion</strong> prüfst du,
+          ob Anbindung und Pfade zusammenpassen. Daneben gibt es{" "}
+          <strong>gerätespezifische Anbindungen</strong>, bei denen FLUX die Werte
+          selbst kennt und automatisch ausliest (Philips Hue, Homematic,
+          Klimaanlage, Lüftung, 3D-Drucker, Luftsensor, Kameras,
+          Zugangskontrolle, AC-Speicher über UDP/Modbus). Diese sind weiter unten
+          unter „Gerätespezifische Anbindungen" beschrieben.
+        </p>
+
+        <h4>2. Rolle – wie die Werte zählen</h4>
+        <p>
+          Die <strong>Rolle</strong> ist die wichtigste Eigenschaft einer Quelle.
+          Sie entscheidet, ob und wie die Werte in die Energiebilanz eingehen. Die
+          Rollen gruppieren sich thematisch:
+        </p>
+
+        <p className="hilfe-rollen-gruppe"><strong>Netz &amp; Erzeugung</strong></p>
+        <ul className="hilfe-list">
+          <li>
+            <strong>Netz (Bezug/Einspeisung):</strong> der Zweirichtungszähler am
+            Netzanschluss – Grundlage für Netzbezug, Einspeisung, Kosten und
+            Autarkie. Drei Kernwerte werden benötigt: Momentanleistung
+            (<code>power</code>), Bezugszähler (<code>gridInTotal</code>) und
+            Einspeisezähler (<code>gridOutTotal</code>). Diese dürfen auf{" "}
+            <strong>mehrere aktive Netz-Quellen verteilt</strong> sein (etwa ein
+            genauer Zähler für die Zählerstände und ein schnelles Messgerät für
+            die Leistung), solange jeder Kernwert von <strong>genau einer</strong>{" "}
+            Quelle kommt. Alternativ lassen sich Quellen über „Leistung von
+            separater Quelle" verlinken.
+          </li>
+          <li>
+            <strong>PV-Erzeugung:</strong> ein Wechselrichter bzw. PV-Strang;
+            liefert erzeugte Leistung und Gesamtertrag. Mehrere PV-Quellen werden
+            zur Gesamterzeugung summiert.
+          </li>
+        </ul>
+
+        <p className="hilfe-rollen-gruppe"><strong>Speicher</strong></p>
+        <ul className="hilfe-list">
           <li>
             <strong>Batterie-Einspeisung (Entladung):</strong> die Leistung, die
             der Speicher ins Haus abgibt – zählt als Eigenverbrauch aus dem
@@ -298,222 +303,237 @@ export function HilfeKonfigurationPage() {
           <li>
             <strong>Batterie-Netzladung:</strong> Strom, mit dem der Speicher
             gezielt aus dem Netz geladen wird (z.&nbsp;B. zu günstigen
-            Börsenzeiten) – wird gesondert berücksichtigt.
+            Börsenzeiten).
           </li>
           <li>
-            <strong>AC-Batterie (AC-Speicher):</strong> ein wechselstromseitig
-            angebundener Batteriespeicher, der je nach Betrieb lädt oder entlädt.
-            Anders als die beiden Batterie-Rollen oben, die jeweils nur eine
-            Flussrichtung abbilden, deckt diese Rolle beide Richtungen über eine
-            einzige Quelle ab (positive Leistung = Netzladung, negative =
-            Einspeisung ins Haus); beide Energiemengen werden getrennt erfasst.
-            Für AC-Speicher gibt es zusätzlich zu REST/MQTT zwei
-            protokollspezifische Anbindungen (UDP&nbsp;/&nbsp;Modbus&nbsp;TCP) mit
-            automatischer Werteauslesung und – je nach Protokoll – Ansteuerung.
-            Details siehe eigene Seite <strong>Speicher</strong> im Menü.
+            <strong>AC-Batterie:</strong> ein wechselstromseitig angebundener
+            Speicher, der beide Flussrichtungen über eine einzige Quelle abbildet
+            (positive Leistung = Netzladung, negative = Einspeisung ins Haus).
+            Für AC-Speicher gibt es eigene Anbindungen (UDP/Modbus/Zendure), siehe
+            unten. Details zur Auswertung auf der Seite <strong>Speicher</strong>.
           </li>
           <li>
-            <strong>DC-Batterie (DC-Speicher):</strong> ein gleichstromseitig
-            gekoppelter Speicher (z. B. Laderegler + Wechselrichter in
-            Eigenbau), der selbst keine eigene Messschnittstelle hat. Statt
-            eigener Abfrage verweist diese Rolle auf bereits vorhandene Quellen:
-            eine <em>PV-Quelle</em> für die Ladung (optional – etwa wenn der
-            Laderegler nicht auslesbar ist), eine <em>Batterie-Einspeisung</em>
-            für die Entladung und optional ein <em>AC-Ladegerät</em>. Anbindung,
-            URL, Authentifizierung sowie Intervall/Timeout entfallen, da keine
-            eigenen Daten abgefragt werden – alle Werte stammen aus den
-            verknüpften Quellen. Ist eine der verknüpften Quellen schaltbar,
-            erscheint ihr Ein/Aus-Schalter automatisch auf der Speicher-Seite.
-            Der DC-Speicher zählt nicht doppelt in die Energiebilanz, da die
-            verknüpften Quellen bereits erfasst werden. Details siehe eigene
-            Seite <strong>Speicher</strong> im Menü.
+            <strong>DC-Batterie:</strong> ein gleichstromseitig gekoppelter
+            Speicher ohne eigene Messschnittstelle. Statt eigener Abfrage verweist
+            diese Rolle auf vorhandene Quellen (PV-Quelle für die Ladung,
+            Batterie-Einspeisung für die Entladung, optional ein AC-Ladegerät).
+            Zählt nicht doppelt, da die verknüpften Quellen bereits erfasst sind.
+          </li>
+        </ul>
+
+        <p className="hilfe-rollen-gruppe"><strong>Verbraucher &amp; Geräte</strong></p>
+        <ul className="hilfe-list">
+          <li>
+            <strong>Verbraucher:</strong> ein einzelnes Gerät (Wärmepumpe,
+            E-Auto, Haushaltsgerät …). Erscheint auf der Verbraucherseite mit
+            Momentanleistung und Tagesverbrauch.
           </li>
           <li>
-            <strong>Verbraucher:</strong> ein einzelnes Gerät (Wärmepumpe, E-Auto,
-            Klimaanlage, Haushaltsgeräte …). Erscheint auf der Verbraucherseite
-            mit Momentanleistung und Tagesverbrauch.
+            <strong>Klimaanlage, Lüftung, 3D-Drucker, Luftsensor:</strong>{" "}
+            gerätespezifische Rollen mit eigener Darstellung auf der Statusseite,
+            nutzbar in Regeln und als Kachel. Haben sie eine verlinkte
+            Leistungsquelle, erscheinen sie zusätzlich als Verbraucher. Ihre
+            Anbindung ist unten beschrieben.
           </li>
+          <li>
+            <strong>Warmwasserspeicher-Temperaturen:</strong> genau zwei
+            Temperaturwerte (oben/unten), die am Warmwasserspeicher der Übersicht
+            angezeigt werden.
+          </li>
+        </ul>
+
+        <p className="hilfe-rollen-gruppe"><strong>Sharing, Emulation &amp; Hilfswerte</strong></p>
+        <ul className="hilfe-list">
           <li>
             <strong>Netz §42c:</strong> der Zähler eines externen Haushalts
-            (Nachbarn), der am Energy Sharing teilnimmt. Aus diesen Quellen leitet
-            das Tool automatisch die §42c-Abnehmer ab.
+            (Nachbarn) am Energy Sharing; daraus werden die §42c-Abnehmer
+            abgeleitet.
           </li>
           <li>
             <strong>Emulation (Netz / §42c-Netz):</strong> wie die jeweilige
             Netzrolle, aber ohne reales Gerät – die Werte kommen aus einem
-            Last-/Erzeugerprofil des Simulators. Für noch nicht angebundene oder
-            hypothetische Anschlüsse.
+            Last-/Erzeugerprofil des Simulators.
           </li>
           <li>
             <strong>Hilfswert / Info:</strong> ein Wert ohne direkte
-            Bilanzwirkung – nutzbar in Formeln/Berechnungen und als reiner
-            Anzeigewert (z. B. Temperaturen, Ladezustände, Referenzleistungen).
-            (Früher zwei getrennte Rollen „Hilfswert" und „Info"; jetzt vereint.)
+            Bilanzwirkung – nutzbar in Formeln und als reiner Anzeigewert (z.&nbsp;B.
+            Temperaturen, Ladezustände).
+          </li>
+        </ul>
+
+        <h4>3. Gerätespezifische Anbindungen</h4>
+        <p>
+          Für die folgenden Geräte kennt FLUX die Datenstruktur und liest die
+          Werte automatisch aus – du gibst nur die Zugangsdaten an, keine
+          JSON-Pfade.
+        </p>
+        <ul className="hilfe-list">
+          <li>
+            <strong>Philips Hue Bridge:</strong> IP der Bridge und einen
+            Application-Key eintragen; ein Abruf liest alle Leuchten und Sensoren
+            als Untergeräte ein. Den Key erzeugst du einmalig: Knopf auf der
+            Bridge drücken und innerhalb ~30&nbsp;s im selben Netz ausführen:{" "}
+            <code>{`curl -k -X POST https://BRIDGE-IP/api -H "Content-Type: application/json" -d '{"devicetype":"flux#mac"}'`}</code>.
+            Der zurückgegebene <code>username</code> ist der Application-Key.
           </li>
           <li>
-            <strong>Warmwasserspeicher-Temperaturen:</strong> genau zwei
-            Temperatur-Werte (oben und unten), die auf der Übersichtsseite am
-            Warmwasserspeicher angezeigt werden. Nur wenn eine Quelle dieser Rolle
-            existiert, erscheinen dort Speichertemperaturen – andernfalls bleiben
-            sie ausgeblendet.
+            <strong>Homematic CCU3:</strong> IP eintragen; FLUX liest über die
+            XML-API alle Geräte und Kanäle ein. Voraussetzung ist das kostenlose
+            XML-API-Addon (von <code>github.com/jens-maus/XML-API</code>), das auf
+            der CCU3 unter „Systemsteuerung → Zusatzsoftware" installiert wird.
+          </li>
+          <li>
+            <strong>Homematic HCU:</strong> Zentralen-Typ „HCU", dann IP,
+            Auth-Token und SGTIN eintragen. Den Auth-Token erzeugst du einmalig,
+            indem du den Knopf auf der HCU drückst und innerhalb von 5&nbsp;Minuten
+            einen Zugang registrierst (z.&nbsp;B. mit dem Tool
+            <code>hmip_generate_auth_token</code>).
+          </li>
+          <li>
+            <strong>Mitsubishi Klimaanlage:</strong> läuft über MQTT
+            (mitsubishi2MQTT). Basis-Topic angeben; Zustand kommt über die
+            <code>settings</code>/<code>state</code>-Topics, Steuerung über die
+            <code>set</code>-Topics. Wahlweise über den eingebauten lokalen Broker
+            oder einen externen.
+          </li>
+          <li>
+            <strong>Vallox Lüftung:</strong> läuft ebenfalls über MQTT
+            (valloxesp). Basis-Topic angeben; Zustand über
+            <code>state</code>/<code>temp</code>, Steuerung über
+            <code>set</code>.
+          </li>
+          <li>
+            <strong>Prusa 3D-Drucker:</strong> über die lokale PrusaLink-API.
+            Host und Authentifizierung (API-Key oder Benutzer/Passwort) eintragen;
+            liest Druckauftrag und Telemetrie. Eine verlinkte Shelly-Steckdose
+            macht ihn schaltbar.
+          </li>
+          <li>
+            <strong>Luftsensor:</strong> liest Feinstaub (PM2.5/PM10), Temperatur
+            und Luftdruck über eine lokale HTTP-API. Nur die IP wird benötigt.
+          </li>
+          <li>
+            <strong>SecuritySpy-Kameras:</strong> bindet die Überwachungssoftware
+            ein (Kameraliste, Live-Bilder, Aufnahmen, Bewegungs-Ereignisse in
+            Regeln). Host, Port und Zugangsdaten eintragen.
+          </li>
+          <li>
+            <strong>Zugangskontrolle (RFID/PIN-Reader):</strong> empfängt gelesene
+            Karten und PINs über MQTT; die Verwaltung gültiger Tags/PINs erfolgt
+            auf der Seite <strong>Zugangskontrolle</strong>.
+          </li>
+          <li>
+            <strong>Elektroauto (evcc):</strong> vollständige Anbindung an eine
+            evcc-Instanz über deren REST-API. Host:Port und Ladepunkt-Nummer
+            eintragen. Auf der Seite <strong>Elektroauto</strong> zeigt FLUX
+            Live-Status (Lademodus, Ladestand, Verbindung, Ladelimit) mit Steuerung
+            sowie die Ladehistorie (Monat/Jahr/Gesamt mit Sonne/Netz-Aufteilung,
+            Detailtabelle und Sonnenanteil-Spinnendiagramm). Die Ladeleistung geht
+            als Verbraucher in die Bilanz ein.
+          </li>
+          <li>
+            <strong>ENTSO-E REST API:</strong> stellt die CO₂-Intensität des deutschen
+            Netzstroms (aus dem Strommix) bereit, die FLUX laufend mit dem Netzbezug
+            verrechnet. Nur der Security-Token wird eingetragen (kostenlos über
+            transparency.entsoe.eu). Grundlage der CO₂-Bilanz im Energie-Rückblick.
+          </li>
+          <li>
+            <strong>AC-Speicher (UDP / Modbus TCP / Zendure):</strong>{" "}
+            protokollspezifische Anbindungen für Batteriespeicher mit
+            automatischer Werteauslesung und – je nach Protokoll – Ansteuerung.
+            Details siehe unten.
           </li>
         </ul>
 
         <div className="hilfe-subblock">
-          <h4>Schaltbare Ausgänge: automatische Erkennung</h4>
+          <h4>Schaltbare Ausgänge (Shelly / Tasmota)</h4>
           <p>
-            Quellen, die einen schaltbaren Ausgang haben (Shelly-Steckdosen und
-            -Relais, Tasmota-Geräte), lassen sich in der Quellen-Konfiguration
-            als <strong>schaltbar</strong> markieren und mit einer Kanalzahl
-            versehen. Dieses Häkchen legt fest, <em>ob</em> eine Quelle geschaltet
-            werden kann – etwa als Schaltziel einer Automatisierungsregel oder als
-            Schalter auf der Speicher-Seite. <em>Wie</em> geschaltet wird, erkennt
-            das Tool selbstständig anhand der hinterlegten Adresse:
+            Quellen mit schaltbarem Ausgang (Shelly-Steckdosen und -Relais,
+            Tasmota-Geräte) lassen sich als <strong>schaltbar</strong> markieren
+            und mit einer Kanalzahl versehen. Das Häkchen legt fest, <em>ob</em>{" "}
+            geschaltet werden kann (etwa als Ziel einer Regel oder als Schalter
+            auf der Statusseite); <em>wie</em> geschaltet wird, erkennt FLUX
+            selbst anhand der Adresse:
           </p>
           <ul className="hilfe-list">
             <li>
-              <strong>Shelly:</strong> Beim Schalten werden automatisch beide
-              Protokoll-Generationen versucht – zuerst die neuere RPC-Schnittstelle
-              (Gen&nbsp;2/3, <code>/rpc/Switch.Set</code>), dann als Rückfall die
-              ältere Gen&nbsp;1-Schnittstelle (<code>/relay/&lt;kanal&gt;</code>).
-              Dadurch funktionieren Shelly-Geräte aller Generationen ohne weitere
-              Einstellung; der aktuelle Ein/Aus-Zustand wird über dieselben Wege
-              ausgelesen.
+              <strong>Shelly:</strong> Beim Schalten werden beide
+              Protokoll-Generationen versucht – zuerst die neuere
+              RPC-Schnittstelle (Gen&nbsp;2/3), dann als Rückfall Gen&nbsp;1
+              (<code>/relay/&lt;kanal&gt;</code>). So funktionieren alle
+              Generationen ohne Zusatzeinstellung.
             </li>
             <li>
-              <strong>Tasmota:</strong> Tasmota-Geräte werden am typischen
-              Kommando-Endpoint in der Abfrage-Adresse erkannt
-              (<code>/cm?cmnd=…</code>). Geschaltet wird dann mit dem
-              Tasmota-Befehl <code>Power&nbsp;On</code> bzw. <code>Power&nbsp;Off</code>
-              (bei mehreren Kanälen <code>Power1</code>, <code>Power2</code> …),
-              der Zustand wird über <code>Power</code> abgefragt
-              (Antwort <code>ON</code>/<code>OFF</code>).
+              <strong>Tasmota:</strong> erkannt am Kommando-Endpoint
+              (<code>/cm?cmnd=…</code>) in der Abfrage-Adresse. Geschaltet wird mit{" "}
+              <code>Power&nbsp;On/Off</code> (bei mehreren Kanälen{" "}
+              <code>Power1</code>, <code>Power2</code> …).
             </li>
           </ul>
           <p>
-            Die Basis-Adresse zum Schalten wird aus der Abfrage-URL der Quelle
-            abgeleitet; alternativ kann in der Quellen-Konfiguration eine
-            abweichende Schalt-URL hinterlegt werden. Damit ein Tasmota-Gerät
-            automatisch als solches erkannt wird, sollte seine Abfrage-Adresse das
-            Muster <code>/cm?cmnd=…</code> enthalten (z.&nbsp;B.
-            <code>status&nbsp;10</code>). Wird eine schaltbare Quelle nicht als
-            Tasmota erkannt, behandelt das Tool sie als Shelly.
+            Die Schalt-Adresse wird aus der Abfrage-URL abgeleitet; alternativ
+            lässt sich eine abweichende Schalt-URL hinterlegen. Wird eine
+            schaltbare Quelle nicht als Tasmota erkannt, behandelt FLUX sie als
+            Shelly.
           </p>
         </div>
 
         <div className="hilfe-subblock">
-          <h4>AC-Speicher: unterstützte Protokolle und Modelle</h4>
+          <h4>AC-Speicher: Protokolle und Modelle</h4>
           <p>
-            Batteriespeicher mit der Rolle <strong>AC-Batterie</strong> (siehe
-            oben) können auf vier Wegen angebunden werden. Welcher Weg möglich ist,
-            hängt vom Speicher und seiner Firmware ab:
+            Speicher mit der Rolle <strong>AC-Batterie</strong> können auf vier
+            Wegen angebunden werden; welcher möglich ist, hängt vom Modell ab:
           </p>
           <ul className="hilfe-list">
             <li>
-              <strong>UDP (lokale API)</strong> – die herstellereigene lokale
-              Schnittstelle von <strong>Marstek Venus C, D und E</strong>. Es
-              werden alle vom Gerät gelieferten Werte automatisch ausgelesen
-              (Ladezustand, Batterie-, Netz- und PV-Leistung, Temperatur,
-              momentane und nominale Kapazität, Betriebsmodus, Energiezähler,
-              Geräteinfos). <strong>Ansteuerung:</strong> ja – Umschalten der
-              Betriebsmodi Auto, KI, Manuell und Passiv sowie Vorgabe von
-              Leistung und Dauer (je nach Firmware).
+              <strong>UDP (lokale API)</strong> – herstellereigene lokale
+              Schnittstelle von <strong>Marstek Venus C, D und E</strong>. Liest
+              alle Werte automatisch (Ladezustand, Leistungen, Temperatur,
+              Kapazität, Betriebsmodus, Energiezähler). Ansteuerung: ja
+              (Betriebsmodi Auto/KI/Manuell/Passiv, Leistung, Dauer).
             </li>
             <li>
-              <strong>Modbus TCP</strong> – offener Feldbus-Standard (Port 502),
-              den Marstek je nach Modell/Firmware nativ oder über einen
-              RS485-zu-WLAN-Adapter bereitstellt. Unterstützte Speichermodelle:
-              <ul className="hilfe-list">
-                <li>
-                  <strong>Marstek Venus A / D / E (Generation 3)</strong> – diese
-                  drei teilen sich dieselbe Registerbelegung und sind daher als
-                  eine Auswahl zusammengefasst.
-                </li>
-                <li>
-                  <strong>Marstek Venus E (Generation 1/2)</strong> – ältere
-                  Registerbelegung, als eigenes Modell wählbar.
-                </li>
-                <li>
-                  <strong>Anker Solix (Max AC / Solarbank 4 E5000 Pro)</strong> –
-                  nutzt denselben „M1"-Registersatz wie Marstek und wird darüber
-                  gelesen und gesteuert. In der Anker-App unter Einstellungen →
-                  Drittanbieter-Steuerung „Modbus TCP" aktivieren (Port 502).
-                </li>
-              </ul>
-              Ausgelesen werden Batterieleistung, Ladezustand, Spannung, Strom,
-              Temperatur, AC-Leistung und die Energiezähler (geladen/entladen
-              gesamt). <strong>Ansteuerung:</strong> ja – erzwungenes Laden oder
-              Entladen mit einstellbarer Leistung und Ziel-Ladezustand, Rückgabe
-              an die Automatik sowie Schalten der Backup-/Notstromfunktion. Für
-              Schreibzugriffe wird der Speicher automatisch in den
-              RS485-Steuermodus versetzt.
+              <strong>Modbus TCP</strong> (Port 502) – für{" "}
+              <strong>Marstek Venus A/D/E (Gen&nbsp;3)</strong>,{" "}
+              <strong>Venus E (Gen&nbsp;1/2)</strong> und{" "}
+              <strong>Anker Solix</strong> (gleicher „M1"-Registersatz).
+              Ansteuerung: ja (erzwungenes Laden/Entladen mit Leistung und
+              Ziel-Ladezustand, Backup-Funktion).
             </li>
             <li>
               <strong>MQTT mit Zendure-Steuerung</strong> – für{" "}
-              <strong>Zendure SolarFlow</strong>. Das Monitoring läuft wie bei jeder
-              MQTT-Quelle über die empfangenen Telemetrie-Werte (Feld-Pfade selbst
-              definieren). Zusätzlich lässt sich – wenn App-Key und Seriennummer
-              hinterlegt sind – die <strong>Lade-/Entladeleistung steuern</strong>:
-              FLUX sendet MQTT-Properties (acMode, outputLimit, inputLimit) an
-              das Zendure-Write-Topic. Voraussetzung ist, dass der Speicher mit
-              demselben lokalen Broker verbunden ist (Zendure lokal betreiben, z.&nbsp;B.
-              via DNS-Umleitung oder zenSDK). <strong>Ansteuerung:</strong> ja –
-              Laden/Entladen mit Leistung, Ruhe.
+              <strong>Zendure SolarFlow</strong>. Monitoring über MQTT-Telemetrie;
+              mit App-Key und Seriennummer zusätzlich Lade-/Entladesteuerung.
+              Voraussetzung: Speicher am selben lokalen Broker.
             </li>
             <li>
-              <strong>REST-API</strong> und <strong>MQTT (generisch)</strong> –
-              Anbindung eines beliebigen AC-Speichers, dessen Leistung z.&nbsp;B.
-              über einen zwischengeschalteten Shelly oder ein eigenes MQTT-Topic
-              gemessen wird. Hier definierst du die Datenfelder per JSON-Pfad
-              selbst. <strong>Ansteuerung:</strong> nein – reines Monitoring.
+              <strong>REST-API / MQTT (generisch)</strong> – beliebiger Speicher,
+              dessen Leistung z.&nbsp;B. über einen Shelly gemessen wird.
+              Datenfelder per JSON-Pfad selbst definieren. Ansteuerung: nein
+              (reines Monitoring).
             </li>
           </ul>
-          <p>
-            Sobald mindestens ein AC-Speicher aktiv ist, erscheint im Menü unter{" "}
-            <em>Details</em> die Seite <strong>Speicher</strong>. Dort werden
-            alle aktiven Speicher mit ihren passend ausgelesenen Werten angezeigt
-            und – soweit das Protokoll es zulässt – direkt angesteuert.
-          </p>
-          <p>
-            <strong>Wirkungsgrad &amp; Speicherverluste.</strong> Am unteren Ende
-            der Speicher-Seite stellt eine Auswertung je Speicher die{" "}
-            <em>eingespeicherte</em> der <em>zurückgewonnenen</em> Energie
-            gegenüber – wählbar ab einem Stichtag und wahlweise je Tag oder je
-            Monat. Daraus werden <strong>Wirkungsgrad</strong> (Anteil der
-            zurückgewonnenen Energie) und <strong>Verlust</strong> ausgewiesen, als
-            Summe über den Zeitraum und je Periode. Grundlage sind die
-            viertelstündlich erfassten Energiemengen. Voraussetzung ist, dass beim
-            jeweiligen Speicher sowohl Ladung als auch Entladung messbar sind; bei
-            einem DC-Speicher etwa muss dazu auch die Solar-Einspeicherung
-            verknüpft sein – fehlt sie, wird der Speicher als „nicht auswertbar"
-            gekennzeichnet. Da die dafür nötigen Verläufe erst ab der Einrichtung
-            gesammelt werden, wählt man den Stichtag am besten auf einen Tag, ab dem
-            durchgängig aufgezeichnet wurde.
-          </p>
           <p className="hilfe-hinweis">
-            Hinweis zu Modbus: Die Registeradressen beruhen auf einer
-            Community-Referenz und sind nicht offiziell von Marstek bestätigt.
-            Besonders bei Venus&nbsp;E kann sich die Belegung zwischen den
-            Generationen unterscheiden. Schreibzugriffe greifen direkt in den
+            Die Modbus-Registeradressen beruhen auf einer Community-Referenz und
+            sind nicht offiziell bestätigt. Schreibzugriffe greifen in den
             Speicherbetrieb ein – am realen Gerät zunächst vorsichtig mit kleinen
             Werten testen.
           </p>
         </div>
-        <p>
-          <strong>Zwei Quellen für ein Gerät.</strong> Manchmal liefern zwei
-          Geräte Daten zum selben Verbraucher – etwa eine Wärmepumpe, deren
-          Betriebsdaten über HeishaMon kommen, deren Leistungsaufnahme aber ein
-          separater Shelly misst. Da eine Quelle immer genau einer Datenquelle
-          entspricht, legt man dafür <strong>zwei Quellen</strong> an: eine für die
-          Betriebsdaten (mit der eigentlichen Geräterolle, z.&nbsp;B. Verbraucher/
-          Wärmepumpe) und eine für die Leistung (der Shelly). In der
-          Konfiguration der Hauptquelle wählt man dann unter „Leistung von
-          separater Quelle" die Shelly-Quelle aus. Die Hauptquelle übernimmt damit
-          deren Leistungswert, und die Shelly-Quelle wird nicht mehr als eigenes
-          Gerät gewertet (keine Doppelzählung). So bleibt die klare Bedeutung
-          „eine Quelle = eine Datenquelle" erhalten, und die Zusammengehörigkeit
-          ist eindeutig hinterlegt.
-        </p>
+
+        <div className="hilfe-subblock">
+          <h4>Zwei Quellen für ein Gerät</h4>
+          <p>
+            Manchmal liefern zwei Geräte Daten zum selben Verbraucher – etwa eine
+            Wärmepumpe, deren Betriebsdaten über HeishaMon kommen, deren
+            Leistungsaufnahme aber ein separater Shelly misst. Da eine Quelle
+            genau einer Datenquelle entspricht, legt man{" "}
+            <strong>zwei Quellen</strong> an und wählt bei der Hauptquelle unter{" "}
+            „Leistung von separater Quelle" die Shelly-Quelle. Die Hauptquelle
+            übernimmt deren Leistungswert, und die Shelly-Quelle wird nicht mehr
+            separat gezählt (keine Doppelzählung).
+          </p>
+        </div>
       </section>
 
       <section className="card">
@@ -640,262 +660,201 @@ export function HilfeKonfigurationPage() {
       <section className="card">
         <h3>Senken</h3>
         <p>
-          Eine <strong>Senke</strong> definiert, welche Informationen FLUX{" "}
-          <strong>nach außen</strong> an externe Geräte oder Akteure bereitstellt.
-          Als ersten Punkt wählst du je Senke eine <strong>Rolle</strong>:
+          Während eine Quelle Daten <em>liefert</em>, stellt eine{" "}
+          <strong>Senke</strong> Informationen <strong>nach außen bereit</strong> –
+          an ein Gerät oder ein anderes System. Senken brauchst du also nur, wenn
+          FLUX nicht bloß auswerten, sondern seine Werte aktiv weitergeben soll.
+          Wie bei Quellen wählst du je Senke zuerst eine <strong>Rolle</strong>;
+          es gibt genau zwei:
         </p>
         <ul className="hilfe-list">
           <li>
-            <strong>Zähleremulation</strong> – FLUX bildet ein reales Messgerät
-            nach und liefert einem Speicher ein Regelsignal (die unten
-            beschriebene, vollständig ausgebaute Rolle). Typischer Einsatzzweck:
-            Die Senke meldet dem Speicher genau den Leistungswert, den er
-            ausregeln soll, damit er gezielt so viel entlädt, dass sowohl der
-            eigene Hausverbrauch als auch der Bedarf der §42c-Abnehmer gedeckt
-            wird.
+            <strong>Zähleremulation:</strong> FLUX bildet ein reales Messgerät
+            nach und liefert einem Batteriespeicher ein Regelsignal. Typischer
+            Zweck: Die Senke meldet dem Speicher genau den Leistungswert, den er
+            ausregeln soll, damit er so viel entlädt, dass Hausverbrauch (und
+            optional der §42c-Bedarf) gedeckt werden. Diese Rolle ist unten im
+            Detail beschrieben.
           </li>
           <li>
-            <strong>Datenbereitstellung für externes HEMS</strong> – FLUX
-            veröffentlicht ausgewählte Live-Größen per MQTT an einen Broker,
-            damit ein anderes Energiemanagementsystem (z. B. das eines
-            §42c-Abnehmers) darauf reagieren kann. Du trägst den Broker samt
-            Authentifizierung ein (ohne, Benutzer/Passwort oder Client-Zertifikat,
-            jeweils mit optionalem CA-Zertifikat), legst beliebig viele{" "}
-            <strong>Publish-Topics</strong> an und ordnest jedem Topic per
-            Drag&amp;Drop eine oder mehrere Größen zu. Zur Auswahl stehen
-            kuratierte Größen (verfügbarer Überschuss, abgebbares Leistungslimit,
-            Speicherstand, Batterie-/PV-/Netzleistung, Hausverbrauch, bereitgestellte
-            Sharing-Leistung, prognostizierter Rest-PV-Ertrag) sowie eigene
-            Formel-Größen, die du aus diesen berechnest. Veröffentlicht wird je
-            Topic ein JSON-Objekt (mit Zeitstempel), und zwar nur bei
-            Wertänderung; eine einstellbare Schwelle unterdrückt Rauschen. Auf
-            Knopfdruck erzeugt FLUX eine verständliche{" "}
-            <strong>Schnittstellenbeschreibung</strong>, die du dem Betreiber des
-            externen HEMS weitergeben kannst. Mehrere Senken können an
-            unterschiedliche Broker liefern.
+            <strong>Datenbereitstellung für externes HEMS:</strong> FLUX
+            veröffentlicht ausgewählte Live-Größen per MQTT an einen Broker, damit
+            ein anderes Energiemanagementsystem darauf reagieren kann. Du trägst
+            Broker und Authentifizierung ein, legst beliebig viele{" "}
+            <strong>Publish-Topics</strong> an und ordnest jedem per Drag&amp;Drop
+            eine oder mehrere Größen zu (verfügbarer Überschuss, Leistungslimit,
+            Speicherstand, Batterie-/PV-/Netzleistung, Hausverbrauch,
+            Sharing-Leistung, prognostizierter Rest-PV-Ertrag oder eigene
+            Formel-Größen). Veröffentlicht wird je Topic ein JSON-Objekt mit
+            Zeitstempel, nur bei Wertänderung (eine Schwelle unterdrückt Rauschen).
+            Auf Knopfdruck erzeugt FLUX eine <strong>Schnittstellenbeschreibung</strong>{" "}
+            für den Betreiber des externen HEMS.
           </li>
         </ul>
-        <p>
-          Senken brauchst du also dann, wenn die Anlage nicht nur auswerten,
-          sondern ihre Werte auch aktiv nach außen bereitstellen soll – sei es als
-          Regelsignal für ein Gerät oder als Datenlieferant für ein externes
-          System. Die folgende Beschreibung bezieht sich auf die Rolle{" "}
-          <strong>Zähleremulation</strong>.
+        <p className="hint">
+          Wie Quellen lassen sich auch Senken über das Dreieck in der Kopfzeile
+          ein- und ausklappen.
         </p>
+
+        <h4>Zähleremulation: Grundlagen</h4>
         <p>
-          In der Rolle Zähleremulation bildet eine Senke einen{" "}
-          <strong>Stromzähler</strong> nach – wahlweise
-          einen <strong>Shelly Pro 3EM</strong> (dreiphasig), einen{" "}
+          In dieser Rolle bildet die Senke einen <strong>Stromzähler</strong> nach
+          – wahlweise einen <strong>Shelly Pro 3EM</strong> (dreiphasig), einen{" "}
           <strong>Shelly Pro EM-50</strong> (einphasig) oder einen{" "}
-          <strong>Marstek CT002/CT003</strong>. Viele Batteriespeicher lassen sich
-          auf einen solchen Zähler als Messquelle für ihre Nulleinspeise-Regelung
-          einbinden; das gilt insbesondere für zahlreiche{" "}
-          <strong>Marstek-Speicher</strong>. Der Speicher „sieht" dann den von der
-          Senke ausgegebenen Wert wie einen echten Zähler und regelt seine
-          Lade-/Entladeleistung danach aus. Die Shelly-Varianten werden lokal per
-          Broadcast gefunden (einfachster Weg); die CT-Varianten sprechen Marsteks
-          eigenes Protokoll und eignen sich besonders für die Koordination
-          mehrerer Speicher (Einrichtung siehe unten).
+          <strong>Marstek CT002/CT003</strong>. Viele Batteriespeicher – besonders
+          von <strong>Marstek</strong> – lassen sich auf einen solchen Zähler als
+          Messquelle für ihre Nulleinspeise-Regelung einbinden. Der Speicher
+          „sieht" dann den von der Senke ausgegebenen Wert wie einen echten Zähler
+          und regelt seine Lade-/Entladeleistung danach aus.
         </p>
-        <p>
-          <em>Hinweis:</em> Die weiteren von Marstek unterstützten Zähler (etwa
-          HomeWizard&nbsp;P1 oder Eco&nbsp;Tracker) werden bei der Einrichtung per
-          Bluetooth gekoppelt bzw. laufen über deren eigene Cloud und lassen sich
-          daher nicht sinnvoll emulieren.
-        </p>
-        <p>
-          <strong>Shelly-Erkennung.</strong>{" "}
-          Marstek-Speicher finden den Shelly nicht über eine fest eingetragene
-          Adresse, sondern per <strong>UDP-Broadcast</strong> im lokalen Netz
-          (Port&nbsp;1010, teils 2220). Ist bei einer Senke die{" "}
-          <strong>automatische Erkennung</strong> aktiviert, antwortet die Anlage
-          auf diese Suchanfragen – im Speicher genügt es dann, den passenden
-          Zählertyp auszuwählen und suchen zu lassen. Alternativ steht die direkte
-          URL bereit, falls ein Gerät eine feste Adresse erlaubt.
-        </p>
-        <p className="hilfe-hinweis">
-          <strong>Physischen und emulierten Zähler trennen.</strong> Betreibst du
-          gleichzeitig einen echten Shelly und diese Emulation am selben Speicher,
-          entsteht ein Problem: Beide antworten auf denselben Suchruf, und die
-          Marstek-App übernimmt einfach den ersten Treffer, ohne Auswahl. Abhilfe
-          schafft der einstellbare <strong>emulierte Zählertyp</strong>: Marstek
-          fragt den Pro 3EM und den Pro EM-50 mit unterschiedlichen Methoden ab
-          (dreiphasig bzw. einphasig), und die Emulation antwortet nur auf die zum
-          eingestellten Typ passende Anfrage. Wählst du für die Emulation den{" "}
-          <em>anderen</em> Typ als beim physischen Zähler und in der App genau
-          diesen Typ, reagiert jeweils nur ein Zähler – beide sind damit sauber
-          getrennt.
+        <p className="hint">
+          Die weiteren von Marstek unterstützten Zähler (HomeWizard&nbsp;P1,
+          Eco&nbsp;Tracker …) werden per Bluetooth gekoppelt oder laufen über eine
+          eigene Cloud und lassen sich daher nicht sinnvoll emulieren.
         </p>
 
         <div className="hilfe-subblock">
-          <h4>CT002/CT003 emulieren (für Fortgeschrittene)</h4>
+          <h4>Variante A: Shelly emulieren (einfachster Weg)</h4>
           <p>
-            Neben den Shelly-Typen kann eine Senke auch einen{" "}
-            <strong>Marstek CT002</strong> (dreiphasig) oder{" "}
-            <strong>CT003/P1</strong> (einphasig) nachbilden – Marsteks eigenen
-            Zähler. Das ist vor allem dann interessant, wenn du{" "}
+            Marstek-Speicher finden den Shelly nicht über eine feste Adresse,
+            sondern per <strong>UDP-Broadcast</strong> im lokalen Netz
+            (Port&nbsp;1010, teils 2220). Ist bei der Senke die{" "}
+            <strong>automatische Erkennung</strong> aktiviert, antwortet FLUX auf
+            diese Suchanfragen – im Speicher genügt es dann, den passenden
+            Zählertyp zu wählen und suchen zu lassen. Alternativ steht eine direkte
+            URL bereit.
+          </p>
+          <p className="hilfe-hinweis">
+            <strong>Physischen und emulierten Zähler trennen.</strong> Betreibst
+            du gleichzeitig einen echten Shelly und diese Emulation am selben
+            Speicher, antworten beide auf denselben Suchruf, und die Marstek-App
+            nimmt einfach den ersten Treffer. Abhilfe: Marstek fragt Pro&nbsp;3EM
+            (dreiphasig) und Pro&nbsp;EM-50 (einphasig) mit unterschiedlichen
+            Methoden ab, und die Emulation antwortet nur auf den eingestellten Typ.
+            Wähle für die Emulation den <em>anderen</em> Typ als beim physischen
+            Zähler – dann reagiert jeweils nur einer.
+          </p>
+        </div>
+
+        <div className="hilfe-subblock">
+          <h4>Variante B: CT002/CT003 emulieren (für Fortgeschrittene)</h4>
+          <p>
+            Eine Senke kann auch einen <strong>Marstek CT002</strong> (dreiphasig)
+            oder <strong>CT003/P1</strong> (einphasig) nachbilden – Marsteks eigenen
+            Zähler. Das ist vor allem interessant, wenn du{" "}
             <strong>mehrere Speicher koordinieren</strong> willst, denn über das
             CT-Protokoll teilt sich die Anlage ein gemeinsames Regelziel.
           </p>
           <p>
-            Wichtiger Unterschied zum Shelly: Der CT wird <strong>nicht</strong>{" "}
-            per Broadcast gefunden, sondern über eine feste Geräte-Identität
-            (CT-MAC), die einmalig in der Marstek-Cloud{" "}
-            <strong>registriert</strong> sein muss. Diese Registrierung nimmt das
-            FLUX jetzt direkt vor – du brauchst kein externes Werkzeug mehr. Sie
-            läuft so ab:
+            Wichtiger Unterschied zum Shelly: Der CT wird <strong>nicht</strong> per
+            Broadcast gefunden, sondern über eine feste Geräte-Identität (CT-MAC),
+            die einmalig in der Marstek-Cloud <strong>registriert</strong> sein
+            muss. Diese Registrierung nimmt FLUX direkt vor:
           </p>
           <ol className="hilfe-list">
             <li>
               Bei der Senke den Zählertyp auf <strong>CT002</strong> (HME-4) oder{" "}
-              <strong>CT003</strong> (HME-3) stellen. Es erscheint der Block{" "}
+              <strong>CT003</strong> (HME-3) stellen – es erscheint der Block{" "}
               <em>„CT in Marstek-Cloud registrieren"</em>.
             </li>
             <li>
-              Dort einmalig deine <strong>Marstek-Zugangsdaten</strong> (E-Mail +
-              Passwort) eintragen und auf <em>Registrieren</em> klicken. FLUX
-              legt daraufhin ein „verwaltetes" Fake-CT-Gerät in deinem
-              Marstek-Konto an und erzeugt dafür selbst eine{" "}
-              <strong>CT-MAC</strong> – du musst nichts eingeben. Nach dem Vorgang
-              werden die Zugangsdaten sofort verworfen und{" "}
+              Dort einmalig deine <strong>Marstek-Zugangsdaten</strong> eintragen
+              und auf <em>Registrieren</em> klicken. FLUX legt ein verwaltetes
+              CT-Gerät in deinem Konto an und erzeugt selbst eine CT-MAC. Die
+              Zugangsdaten werden danach sofort verworfen und{" "}
               <strong>nicht gespeichert</strong>.
             </li>
             <li>
-              Nach erfolgreicher Registrierung prüft FLUX automatisch, ob das
-              Gerät in der Cloud angekommen ist, und übernimmt die CT-MAC in die
-              Senke. Existiert bereits ein passendes CT, wird es erkannt und kein
-              zweites angelegt.
+              FLUX prüft automatisch, ob das Gerät in der Cloud angekommen ist, und
+              übernimmt die CT-MAC in die Senke.
             </li>
             <li>
-              In der Marstek-App die CT-Geräteliste aktualisieren (ggf. ab- und
-              wieder anmelden). Das neue CT erscheint – als „offline", das ist
-              normal. Optional die <strong>MAC deines Speichers</strong> aus der
-              App-Geräteverwaltung bei der Senke eintragen (für Sonderdaten in
-              Mehrspeicher-Setups).
+              In der Marstek-App die CT-Geräteliste aktualisieren; das neue CT
+              erscheint (als „offline" – das ist normal).
             </li>
             <li>
-              Im Speicher (App) den neuen CT als Zähler auswählen und den
-              Betriebsmodus auf automatisch stellen. FLUX beantwortet ab jetzt
-              die Abfragen des Speichers lokal auf UDP-Port&nbsp;12345 mit dem
-              berechneten Sollwert.
+              Im Speicher den neuen CT als Zähler auswählen und auf automatisch
+              stellen. FLUX beantwortet ab jetzt die Abfragen lokal auf
+              UDP-Port&nbsp;12345 mit dem berechneten Sollwert.
             </li>
           </ol>
           <p className="hilfe-hinweis">
-            Deine Marstek-Cloud-Zugangsdaten werden nur für den einmaligen
-            Registrierungsschritt verwendet und <strong>nicht</strong> gespeichert
-            (weder in der Senke noch in einem Log). Danach betreibt FLUX
-            ausschließlich die lokale Zähler-Emulation. Das CT-Protokoll und die
-            Cloud-Registrierung beruhen auf Community-Reverse-Engineering und sind
-            nicht offiziell von Marstek dokumentiert; bei Firmware- oder
-            Cloud-Änderungen kann eine Anpassung nötig werden.
+            Die Cloud-Zugangsdaten werden nur für den einmaligen
+            Registrierungsschritt verwendet und nicht gespeichert. Das
+            CT-Protokoll beruht auf Community-Reverse-Engineering und ist nicht
+            offiziell dokumentiert; bei Cloud-Änderungen kann eine Anpassung nötig
+            werden.
           </p>
         </div>
 
         <div className="hilfe-subblock">
-          <h4>Mehrere Speicher: Lastverteilung &amp; Grenzen</h4>
+          <h4>Mehrere Speicher koordinieren</h4>
           <p>
-            Sind über eine CT-Senke <strong>mehrere AC-Speicher</strong>{" "}
-            gekoppelt, teilt FLUX das gemeinsame Regelziel gewichtet auf sie
+            Sind über eine CT-Senke <strong>mehrere AC-Speicher</strong> gekoppelt,
+            teilt FLUX das gemeinsame Regelziel <strong>gewichtet</strong> auf sie
             auf, sodass sie zusammen die Netzabweichung ausregeln, statt sich
             gegenseitig hochzuschaukeln. Bei gleicher Gewichtung übernimmt zunächst
-            jeder Speicher den gleichen Anteil.
+            jeder den gleichen Anteil.
           </p>
           <p>
-            Erreicht ein Speicher seine <strong>technische Leistungsgrenze</strong>{" "}
-            (er folgt einem höheren Ziel nicht mehr, weil z.&nbsp;B. sein Maximum
-            bei 1200&nbsp;W liegt), erkennt FLUX diese{" "}
-            <strong>Sättigung</strong> und gibt die frei werdende Leistung an die
-            übrigen, noch nicht ausgelasteten Speicher weiter. Ein Speicher mit
-            mehr Reserve übernimmt dann den größeren Anteil, damit ein vorhandener
-            Überschuss möglichst vollständig gespeichert und nicht ins Netz
-            eingespeist wird. Lässt die Aufnahme eines Speichers gegen Ende des
-            Ladens nach (Speicher wird voll), wird die erkannte Grenze automatisch
-            angepasst; sinkt der Überschuss so weit, dass keine Grenze mehr im Weg
-            ist, teilen die Speicher wieder gleichmäßig. Das geschieht selbsttätig –
-            es ist keine Einstellung nötig.
-          </p>
-          <p>
-            Die <strong>Gewichtung ist ein Richtwert, kein hartes Limit</strong>.
-            Kann ein Speicher seinen Anteil nicht liefern – etwa weil er{" "}
-            <strong>leer</strong> ist oder in der Leistung begrenzt –, übernimmt ein
-            anderer, dazu fähiger Speicher den Rest, auch über seinen eigenen
-            „fairen" Anteil hinaus. Ist die benötigte Gesamtleistung höher als das,
-            was ein Speicher bisher als Grenze kannte, während der andere gerade
-            nichts beitragen kann, <strong>tastet</strong> FLUX die Grenze
-            schrittweise nach oben, bis der Bedarf gedeckt ist oder der Speicher
-            wirklich an seine physische Grenze stößt. So bleibt ein einzelner leerer
-            Speicher nicht fälschlich der Flaschenhals für den anderen.
+            Erreicht ein Speicher seine <strong>Leistungsgrenze</strong>, erkennt
+            FLUX diese Sättigung und gibt die frei werdende Leistung an die übrigen
+            Speicher weiter, damit ein Überschuss möglichst vollständig gespeichert
+            statt eingespeist wird. Wird ein Speicher voll, passt sich die Grenze
+            automatisch an. Die Gewichtung ist dabei ein <strong>Richtwert, kein
+            hartes Limit</strong>: Kann ein Speicher seinen Anteil nicht liefern
+            (leer oder begrenzt), übernimmt ein anderer den Rest.
           </p>
           <p>
             <strong>Ruhiges Regeln um den Nullpunkt.</strong> Damit die Speicher
-            nicht ständig um die Nulleinspeisung pendeln, gibt es mehrere
-            Dämpfungen (auf der Senkenseite einstellbar): <em>Max. Schritt / Poll</em>{" "}
-            begrenzt die Änderung je Abfrage, das <em>Totband um 0</em> beruhigt den
-            Nullpunkt, und die <em>Umverteilung zwischen Speichern</em>{" "}
-            (Umverteilungs-Schritt + Toleranzband) sorgt dafür, dass das Angleichen
-            ins gewünschte Verhältnis langsam und ohne Gegeneinander-Schaukeln
-            geschieht, während echte Laständerungen weiterhin zügig ausgeregelt
-            werden. Zusätzlich unterdrückt eine <em>Frische-Prüfung</em> ein
-            erneutes Nachregeln, solange der Netzzähler noch keinen neuen Messwert
-            geliefert hat – der Speicher überschwingt so nicht auf einem veralteten
-            Wert.
+            nicht ständig pendeln, gibt es mehrere Dämpfungen (auf der Senkenseite
+            einstellbar): <em>Max. Schritt / Poll</em> begrenzt die Änderung je
+            Abfrage, das <em>Totband um 0</em> beruhigt den Nullpunkt, und die{" "}
+            <em>Umverteilung zwischen Speichern</em> sorgt für langsames Angleichen
+            ohne Gegeneinander-Schaukeln. Eine <em>Frische-Prüfung</em> unterdrückt
+            Nachregeln, solange der Netzzähler keinen neuen Messwert geliefert hat.
           </p>
           <p className="hilfe-hinweis">
-            <strong>Sicherheit bei fehlender Netzmessung.</strong> Die CT-Regelung
-            braucht den aktuellen Wert des Netzzählers. Fehlt kurzzeitig eine{" "}
-            <strong>frische</strong> Messung (Netzzähler nicht erreichbar), regelt
-            FLUX <em>nicht</em> auf dem veralteten Wert weiter, sondern fährt
-            die AC-Speicher sicherheitshalber sanft auf 0&nbsp;W und protokolliert
-            das. Sobald wieder frische Messwerte vorliegen, läuft die normale
-            Regelung von selbst weiter. So wird verhindert, dass die Speicher bei
-            einem Zählerausfall blind einspeisen.
-          </p>
-          <p className="hilfe-hinweis">
-            <strong>Anzeige.</strong> Der Live-Block des Multi-Speicher-Balancers
-            erscheint direkt <strong>innerhalb der zugehörigen CT-Senke</strong>,
-            zusammen mit den Gewichts- und Dämpfungseinstellungen – denn diese
-            gehören logisch zu genau dieser Senke.
+            <strong>Sicherheit bei fehlender Netzmessung.</strong> Fehlt kurzzeitig
+            eine frische Messung, regelt FLUX <em>nicht</em> auf dem veralteten
+            Wert weiter, sondern fährt die Speicher sanft auf 0&nbsp;W und
+            protokolliert das. So wird blindes Einspeisen bei einem Zählerausfall
+            verhindert. Der Live-Block des Multi-Speicher-Balancers erscheint
+            innerhalb der zugehörigen CT-Senke, zusammen mit den Gewichts- und
+            Dämpfungseinstellungen.
           </p>
         </div>
-        <p>
-          Der <strong>Sollwert</strong> einer Senke ist frei konfigurierbar. Er
-          setzt sich zusammen aus der Basis-Quelle (eigener Hauszähler),
-          multipliziert mit einem <strong>Faktor</strong>, optional dem Bedarf
-          aller §42c-Abnehmer und beliebigen weiteren gewichteten Offset-Quellen.
-          Für §42c-Sharing wählt man Faktor&nbsp;1 und aktiviert den §42c-Bedarf.
-          Sollen dagegen zwei lokale Speicher gemeinsam nur den Hausverbrauch
-          decken (ohne §42c), gibt man jeder Senke den Faktor&nbsp;0,5 – dann
-          übernimmt jeder Speicher die Hälfte.
-        </p>
-        <p>
-          Für komplexere Fälle lässt sich der Sollwert einer Senke auch per{" "}
-          <strong>erweiterter Formel</strong> festlegen (Feld „Erweiterte Formel"
-          im ausklappbaren Bereich <em>„Erweiterte Einstellungen (Offsets &amp;
-          Formel)"</em> der Senken-Konfiguration). Ist eine Formel eingetragen,
-          ersetzt sie die einfache Basis-/Offset-/§42c-Berechnung. Erlaubt sind die
-          Grundrechenarten <code>+ − * / %</code>, Klammern und die Funktionen{" "}
-          <code>min</code>, <code>max</code>, <code>abs</code>,{" "}
-          <code>clamp(x,&nbsp;lo,&nbsp;hi)</code> und <code>round</code>. Als
-          Variablen stehen die Leistung jeder Quelle (unter ihrer Quellen-ID),{" "}
-          <code>haus</code> (Basis-Quelle der Senke), <code>abnehmer42c</code>{" "}
-          (Summe des §42c-Bedarfs) sowie je Senke <code>&lt;id&gt;_leistung</code>{" "}
-          (aktuelle Ausspeisung) und <code>&lt;id&gt;_max</code> (Maximalleistung)
-          zur Verfügung. Die genaue Namensliste zeigt der aufklappbare Bereich
-          „Verfügbare Variablen" direkt am Eingabefeld.
-        </p>
-        <p>
-          Ein typischer Anwendungsfall ist die <strong>Priorisierung mehrerer
-          Speicher</strong>: Regeln zwei lokale Speicher unabhängig auf 0&nbsp;W
-          am Hauszähler, kann es passieren, dass einer lädt, während der andere
-          entlädt. Um stattdessen den zweiten Speicher erst dann zuzuschalten,
-          wenn der erste seine Maximalleistung ausspeist, verwendet man für die
-          Senke des zweiten Speichers z.&nbsp;B. die Formel{" "}
-          <code>max(0, hichi + speicher1_leistung - speicher1_max)</code>. Der
-          zweite Speicher deckt so nur den Restbezug, der nach voller Ausspeisung
-          des ersten noch übrig bleibt. Unter dem Eingabefeld wird die Formel
-          live geprüft und der aktuelle Ergebniswert angezeigt, sodass sich die
-          Wirkung direkt kontrollieren lässt.
-        </p>
+
+        <div className="hilfe-subblock">
+          <h4>Der Sollwert</h4>
+          <p>
+            Der <strong>Sollwert</strong> einer Senke ist frei konfigurierbar. Er
+            setzt sich zusammen aus der Basis-Quelle (eigener Hauszähler),
+            multipliziert mit einem <strong>Faktor</strong>, optional dem Bedarf
+            aller §42c-Abnehmer und weiteren gewichteten Offset-Quellen. Für
+            §42c-Sharing wählt man Faktor&nbsp;1 und aktiviert den §42c-Bedarf.
+            Sollen zwei lokale Speicher gemeinsam nur den Hausverbrauch decken,
+            gibt man jeder Senke Faktor&nbsp;0,5.
+          </p>
+          <p>
+            Für komplexere Fälle lässt sich der Sollwert per{" "}
+            <strong>erweiterter Formel</strong> festlegen (im ausklappbaren Bereich
+            der Senken-Konfiguration). Erlaubt sind Grundrechenarten, Klammern und
+            die Funktionen <code>min</code>, <code>max</code>, <code>abs</code>,{" "}
+            <code>clamp</code> und <code>round</code>. Als Variablen stehen die
+            Leistung jeder Quelle (unter ihrer ID), <code>haus</code>,{" "}
+            <code>abnehmer42c</code> sowie je Senke <code>&lt;id&gt;_leistung</code>{" "}
+            und <code>&lt;id&gt;_max</code> zur Verfügung.
+          </p>
+          <p>
+            Ein typischer Fall ist die <strong>Priorisierung mehrerer Speicher</strong>:
+            Um den zweiten Speicher erst zuzuschalten, wenn der erste voll
+            ausspeist, nutzt man für dessen Senke z.&nbsp;B.{" "}
+            <code>max(0, hichi + speicher1_leistung - speicher1_max)</code>. Unter
+            dem Eingabefeld wird die Formel live geprüft und der Ergebniswert
+            angezeigt.
+          </p>
+        </div>
       </section>
 
       <section className="card">
@@ -1369,24 +1328,50 @@ export function HilfeKonfigurationPage() {
       <section className="card">
         <h3>Benachrichtigungen (ntfy)</h3>
         <p>
-          Unter <strong>Einstellungen → Benachrichtigungen</strong> kann FLUX
+          Unter <strong>Einstellungen → Benachrichtigungen</strong> versendet FLUX
           Push-Meldungen über den kostenlosen Dienst <strong>ntfy</strong>{" "}
-          versenden – ohne Konto. Du installierst die ntfy-App (Android/iOS) oder
-          öffnest die Weboberfläche, abonnierst dort ein frei wählbares Topic
-          (z.&nbsp;B. „flux-mein-haus") und trägst denselben Topic-Namen in FLUX ein.
-          FLUX sendet die Meldungen dann per HTTP an{" "}
+          (ohne Konto). Du installierst die ntfy-App (Android/iOS) oder öffnest die
+          Weboberfläche und abonnierst dort ein Topic; FLUX sendet an{" "}
           <code>&lt;server&gt;/&lt;topic&gt;</code>.
         </p>
         <p>
-          Wähle einen möglichst eindeutigen, schwer zu erratenden Topic-Namen:
-          Jeder, der den Namen kennt, kann die Meldungen abonnieren. <strong>Was</strong>{" "}
-          eine Benachrichtigung auslöst, wird ausschließlich über die{" "}
-          <strong>Automatisierungsregeln</strong> festgelegt (Aktion
-          „Push-Nachricht") – so bleiben alle Auslöser an einem Ort. Beispiele:
-          negativer Börsenpreis, eine offline gegangene Quelle, niedriger
-          Batterie-Ladezustand oder ein Gerät ohne Verbrauch. Ein Mindestabstand
-          verhindert, dass dieselbe Meldung mehrfach in kurzer Folge kommt. Über
-          „Testbenachrichtigung senden" lässt sich die Einrichtung prüfen.
+          FLUX unterstützt <strong>mehrere Kanäle</strong>: Jeder Kanal hat einen
+          eigenen Namen, Server, Topic und eine Priorität. So lassen sich Meldungen
+          thematisch bündeln (z.&nbsp;B. ein „Alarm"-Kanal, ein „Technik"-Kanal), und
+          jede Person abonniert nur die Kanäle, die sie interessieren. Über den
+          „Test"-Knopf je Kanal prüfst du die Einrichtung.
+        </p>
+        <p>
+          Welche Ereignisse an welchen Kanal gehen, legst du per{" "}
+          <strong>Drag&amp;Drop</strong> fest: Links stehen alle{" "}
+          <strong>Auslöser</strong> – jede einzelne Automatisierungsregel mit
+          Push-Aktion, jeder Anomalie-Typ und die Netzbetreiber-Drosselungen. Ziehe
+          einen Auslöser auf einen Kanal, um ihn zuzuordnen. Ein Auslöser kann an
+          mehrere Kanäle gehen; ein Auslöser ohne Zuordnung sendet nichts. Wähle je
+          Topic einen schwer zu erratenden Namen, denn jeder mit dem Namen kann
+          mitlesen. Die möglichen Auslöser im Überblick:
+        </p>
+        <ul>
+          <li>
+            <strong>Automatisierungsregeln:</strong> Meldungen, wenn eine Regel
+            ausgelöst oder beendet wird bzw. ihr Ausgang extern zurückgeschaltet
+            wurde. Zusätzlich kann eine Regel gezielt die Aktion „Push-Nachricht"
+            mit eigenem Text nutzen.
+          </li>
+          <li>
+            <strong>§14a-Bezugsbegrenzung</strong> und{" "}
+            <strong>§9-Einspeisebegrenzung:</strong> je ein Schalter, ob bei einem
+            Netzbetreiber-Eingriff (aktiv/aufgehoben) benachrichtigt wird.
+          </li>
+          <li>
+            <strong>Anomalie-Erkennung:</strong> je Detektor einzeln einstellbar,
+            ob eine erkannte Anomalie eine Push-Meldung auslöst.
+          </li>
+        </ul>
+        <p>
+          Alle diese Schalter wirken nur, wenn der Versand grundsätzlich aktiviert
+          und ein Topic eingetragen ist. So bekommst du genau die Meldungen, die
+          dich interessieren, ohne von den übrigen überflutet zu werden.
         </p>
       </section>
     </div>
@@ -1411,6 +1396,27 @@ export function HilfeAuswertungPage() {
           die Energie im aktuellen Moment fließt – von der Erzeugung über Speicher
           und Hausverbrauch bis zu Netzbezug und Einspeisung. Die Werte werden
           laufend im Abfrageintervall aktualisiert.
+        </p>
+        <p>
+          <strong>Schnellstart-Kacheln.</strong> Unterhalb des Anlagenschemas lassen
+          sich frei konfigurierbare Kacheln anlegen. Über den Knopf „Anpassen" wird
+          der Bearbeitungsmodus aktiviert; dort fügt „+ Kachel" eine neue Kachel
+          hinzu (Typ und Ziel werden im Dialog gewählt) und „+ Ordner" einen neuen
+          Ordner. Verfügbare Kacheltypen richten sich nach den vorhandenen Quellen:
+          Automatisierungsregel, Schalter (Shelly/Tasmota, auch alte Gen1-Geräte),
+          Hue-Leuchte (mit Farbe), Homematic-Gerät/-Gruppe (inkl. Rollladen mit
+          Position), Homematic-Alarm-Modus sowie Szenen. Eine <strong>Szene</strong>
+          bündelt mehrere Aktionen (z. B. „alle Lampen aus, Rollläden runter, Alarm
+          scharf") und führt sie mit einem Klick aus; die Aktionen werden über das
+          Stift-Symbol im Anpassen-Modus zusammengestellt.
+        </p>
+        <p>
+          <strong>Ordner.</strong> Kacheln lassen sich in Ordner bündeln: im
+          Anpassen-Modus eine Kachel auf einen Ordner ziehen, oder direkt im
+          geöffneten Ordner über „+ Kachel" anlegen. Ein Klick auf einen Ordner
+          „taucht ein" und zeigt dessen Inhalt; ein Klick oben in den
+          Energiefluss-Bereich (oder auf den Zurück-Pfeil) kehrt eine Ebene höher
+          zurück. Ordner sind benennbar und löschbar; die Anordnung wird gespeichert.
         </p>
         <p>
           Neben den Momentanwerten zeigt die Ansicht auch die{" "}

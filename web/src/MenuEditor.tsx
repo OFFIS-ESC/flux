@@ -10,7 +10,10 @@ import { buildItems, applyMenuConfig, type Item, type MenuConfig } from "./Menu"
 // Speichern aktualisiert sich das Menü automatisch (Event "menuconfigchanged").
 
 export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
-  const defaults = buildItems(!!hasMarstek);
+  // Im Editor IMMER alle Seiten anzeigen (alle=true), damit die Reihenfolge-
+  // Konfiguration vollständig ist – auch für Seiten, deren Gerät gerade nicht
+  // erkannt wird (Kameras, Zugangskontrolle, Elektroauto, Speicher).
+  const defaults = buildItems(!!hasMarstek, true, true, true, true);
   const [items, setItems] = useState<Item[]>(defaults);
   const [saved, setSaved] = useState<string>("");
   const [dragTop, setDragTop] = useState<number | null>(null);
@@ -19,7 +22,7 @@ export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
   // Aktuelle Konfiguration laden und auf die Defaults anwenden.
   useEffect(() => {
     fetch("/api/menu").then((r) => r.json()).then((j) => {
-      if (j?.ok) setItems(applyMenuConfig(defaults, j.config ?? null));
+      if (j?.ok) setItems(applyMenuConfig(defaults, j.config ?? null, true));
     }).catch(() => { /* Default bleibt */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMarstek]);
@@ -51,7 +54,20 @@ export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
   function toConfig(list: Item[]): MenuConfig {
     return list.map((it) => ({
       id: it.id,
-      children: it.children ? it.children.map((c) => ({ id: c.id })) : undefined,
+      hidden: it.hidden === true ? true : undefined,
+      children: it.children ? it.children.map((c) => ({ id: c.id, hidden: c.hidden === true ? true : undefined })) : undefined,
+    }));
+  }
+
+  // Sichtbarkeit eines Hauptpunkts umschalten.
+  function toggleTopHidden(topIdx: number) {
+    setItems((prev) => prev.map((it, i) => i === topIdx ? { ...it, hidden: !it.hidden } : it));
+  }
+  // Sichtbarkeit eines Unterpunkts umschalten.
+  function toggleChildHidden(topIdx: number, childIdx: number) {
+    setItems((prev) => prev.map((it, i) => {
+      if (i !== topIdx || !it.children) return it;
+      return { ...it, children: it.children.map((c, j) => j === childIdx ? { ...c, hidden: !c.hidden } : c) };
     }));
   }
 
@@ -85,9 +101,10 @@ export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
       <h3>Menüstruktur anpassen</h3>
       <p className="hint">
         Ziehe die Haupt- und Unterpunkte mit dem Griff&nbsp;⠿ in die gewünschte
-        Reihenfolge. Unterpunkte lassen sich innerhalb ihrer Gruppe verschieben.
-        Nach dem Speichern übernimmt das Menü die neue Reihenfolge. Die Beschriftungen
-        werden vom Programm vorgegeben und ändern sich nicht.
+        Reihenfolge. Über die Checkbox links blendest du einzelne Seiten aus dem
+        Menü aus (sie bleiben per Direktlink erreichbar). Nach dem Speichern
+        übernimmt das Menü Reihenfolge und Sichtbarkeit. Die Beschriftungen werden
+        vom Programm vorgegeben.
       </p>
 
       <ul className="menu-editor-list">
@@ -103,7 +120,10 @@ export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
           >
             <div className="menu-editor-row">
               <span className="menu-drag-handle" title="Ziehen zum Verschieben">⠿</span>
-              <span className="menu-editor-label">{it.label || "Gesamtansicht"}</span>
+              <label className="menu-editor-vis" title={it.hidden ? "Ausgeblendet – zum Einblenden anhaken" : "Sichtbar – zum Ausblenden abwählen"}>
+                <input type="checkbox" checked={!it.hidden} onChange={() => toggleTopHidden(ti)} />
+              </label>
+              <span className={`menu-editor-label${it.hidden ? " ausgeblendet" : ""}`}>{it.label || "Gesamtansicht"}</span>
               {it.children && <span className="menu-editor-group-tag">Gruppe</span>}
             </div>
 
@@ -124,7 +144,10 @@ export function MenuEditor({ hasMarstek }: { hasMarstek?: boolean }) {
                     }}
                   >
                     <span className="menu-drag-handle" title="Ziehen zum Verschieben">⠿</span>
-                    <span className="menu-editor-label">{c.label}</span>
+                    <label className="menu-editor-vis" title={c.hidden ? "Ausgeblendet" : "Sichtbar"}>
+                      <input type="checkbox" checked={!c.hidden} onChange={() => toggleChildHidden(ti, ci)} />
+                    </label>
+                    <span className={`menu-editor-label${c.hidden ? " ausgeblendet" : ""}`}>{c.label}</span>
                   </li>
                 ))}
               </ul>

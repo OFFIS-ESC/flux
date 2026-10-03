@@ -48,9 +48,42 @@ export type SourceRole =
   //             unten), die auf der Übersicht am Speicher angezeigt werden. Zählt
   //             nicht in die Bilanz. Nur wenn eine solche Quelle existiert, werden
   //             die Speichertemperaturen auf der Übersichtsseite eingeblendet.
-  | "water"; // Wasserzähler des Hauses (misst keinen Strom). Zählerstand in m³,
-//             z.B. via AI-on-the-Edge (/json -> main.value). Wird zu Wasser-
-//             Viertelstunden und Tagesverbräuchen verarbeitet.
+  | "water" // Wasserzähler des Hauses (misst keinen Strom). Zählerstand in m³,
+  //             z.B. via AI-on-the-Edge (/json -> main.value). Wird zu Wasser-
+  //             Viertelstunden und Tagesverbräuchen verarbeitet.
+  | "hueBridge" // Philips Hue Bridge: EINE Quelle, die per CLIP-v2-API alle
+//             Leuchten/Sensoren der Bridge in EINEM Poll einliest und als
+//             Untergeräte führt. Zählt nicht in die Energiebilanz; dient der
+//             Statusanzeige, als Schaltziel und als Bedingungs-/Detektorquelle.
+
+// (weitere Smart-Home-Hub-Rollen unten, generisch für CCU3/HCU/...)
+  | "ccuHub" // Homematic CCU3 (und später HCU): EINE Quelle, die per XML-API alle
+//             Geräte/Kanäle des Hubs einliest und als Untergeräte führt. Analog zu
+//             hueBridge: Anzeige, Schaltziel, Bedingungs-/Detektorquelle.
+  | "securitySpy" // SecuritySpy-Überwachungssoftware: EINE Quelle, die per Web-API
+//             die Kameraliste einliest. Zeigt Live-Bilder auf einer eigenen
+//             Kameraseite, gibt Zugriff auf Aufnahmen und liefert Bewegungs-/
+//             Klassifikations-Events für Regeln.
+  | "mitsubishiAc" // Mitsubishi Klimaanlage über mitsubishi2MQTT (REST): ein Gerät
+//             mit Zustand (power/mode/temp/room_temp/fan/vane) und Steuerung.
+//             Anzeige+Bedienung auf der Statusseite, in Regeln und als Kachel.
+  | "vallox" // Vallox-Lüftungsanlage über valloxesp (ESP32): liefert eine
+//             HTML-Statusseite; Steuerung per GET (/setOn, /setOff, /set1..8).
+//             Anzeige+Bedienung auf der Statusseite.
+  | "prusa" // Prusa 3D-Drucker über PrusaLink (lokale HTTP-API): Druckauftrag,
+//             Telemetrie und Status. Energiemessung als verlinkte Quelle möglich.
+  | "airSensor" // Luftmess-Sensor (Feinstaub PM2.5/PM10, Temperatur, Luftdruck)
+//             über lokale HTTP-API (/api/data, /api/status). Anzeige, Kachel,
+//             Nutzung in Regel-Bedingungen.
+  | "accessReader" // Zugangskontrolle: Wiegand-RFID/PIN-Reader über MQTT. Meldet
+//             gelesene Karten (card) und PINs (pin); FLUX prüft gegen eine
+//             Whitelist und sendet Feedback (cmd) sowie löst Aktionen aus.
+  | "evcc" // Elektroauto-Ladung über evcc (REST-API). Vollständige Rolle mit
+//             eigener Seite: Live-Status (Modus, Ladestand, Verbindung, Limit),
+//             Steuerung und Ladehistorie über /api/state und /api/sessions.
+  | "entsoe"; // ENTSO-E Transparency Platform REST-API. Liefert die CO₂-Intensität
+//             des Netzes (über den Strommix) für die CO₂-Bilanz im Rückblick.
+//             Trägt nur den Security-Token; keine Leistung, keine Bilanz-Zählung.
 
 // === Achse 2: Gerätetyp (nur Darstellung) ===
 // Steuert Name/Icon in der Verbraucher-Tabelle und die Gruppierung auf der
@@ -193,6 +226,59 @@ export interface SourceConfig {
   // Max. Lade-/Entladeleistung (W) für die Zendure-Steuerung (Default 800).
   zendureMaxChargeW?: number;
   zendureMaxDischargeW?: number;
+  // Nur für Rolle "hueBridge": IP/Host der Bridge und der Application-Key, der
+  // beim Koppeln (Knopfdruck) erzeugt wurde. Wird als Header hue-application-key
+  // an die lokale CLIP-v2-API geschickt.
+  hueBridgeHost?: string;
+  hueAppKey?: string;
+  // Nur für Rolle "ccuHub": Host/IP der CCU3 und optionaler Port der XML-API
+  // (Default 80). hubTyp erlaubt später weitere Hubs (Default "ccu3").
+  ccuHost?: string;
+  ccuPort?: number;
+  hubTyp?: "ccu3" | "hcu";
+  // Nur für hubTyp "hcu": Auth-Token (per Knopfdruck erzeugt) und SGTIN/Access-
+  // Point-ID der HCU. Werden als Header für die lokale Homematic-IP-API genutzt.
+  hcuAuthToken?: string;
+  hcuSgtin?: string;
+  // Nur für Rolle "securitySpy": Zugang zum SecuritySpy-Webserver.
+  ssHost?: string;
+  ssPort?: number;   // Default 8000 (bei dir 8056)
+  ssUser?: string;
+  ssPass?: string;
+  // Nur für Rolle "mitsubishiAc": Host/IP der mitsubishi2MQTT-Einheit.
+  acHost?: string;
+  // Nur für Rolle "vallox": Host/IP des valloxesp-ESP32.
+  valloxHost?: string;
+  // Nur für Rolle "prusa": PrusaLink-Zugang.
+  prusaHost?: string;                          // IP/Host des Druckers
+  prusaAuth?: "apikey" | "digest";             // Authentifizierungsart
+  prusaApiKey?: string;                         // bei apikey: X-Api-Key
+  prusaUser?: string;                           // bei digest: Benutzer (oft "maker")
+  prusaPass?: string;                           // bei digest: Passwort
+  // Nur für Rolle "airSensor": Host/IP des Luftsensors.
+  airHost?: string;
+  // Nur für Rolle "accessReader": MQTT-Topics des Wiegand-Readers. Broker wird
+  // über die geraeteMqtt*-Felder gewählt (lokal oder extern, wie Klima/Vallox).
+  readerTopicBase?: string;   // Basis-Topic, z.B. "zutritt/reader" (ohne Suffix)
+  // Nur für Rolle "evcc": Host der evcc-Instanz und Loadpoint-Index.
+  evccHost?: string;          // z.B. "192.168.178.30:7070" oder "evcc.local:7070"
+  evccLoadpoint?: number;     // 1-basierter Ladepunkt-Index (Standard 1)
+  // Nur für Rolle "entsoe": Security-Token der ENTSO-E Transparency Platform.
+  entsoeToken?: string;
+  // Für Geräte-Rollen mit persistierbaren Datenpunkten (Luftsensor, Lüftung,
+  // 3D-Drucker): Liste der Datenpunkt-Labels, die persistiert werden sollen.
+  // Leer/fehlt = keine Persistierung. Auswahl je Datenpunkt in der Config.
+  persistLabels?: string[];
+  // Optionale hochaufgelöste Energiemessung je Gerät (elektrische Leistung der
+  // verlinkten Leistungsquelle, entkoppelt gespeichert – wie bei der Wärmepumpe).
+  persistPower?: boolean;
+  // Für MQTT-basierte Geräte (Klima, Lüftung): Broker + Basis-Topic. Ist
+  // geraeteMqttExtern nicht gesetzt, wird der eingebaute lokale Broker (Port
+  // 1883) genutzt. Sonst geraeteMqttHost/Port für einen externen Broker.
+  geraeteMqttExtern?: boolean;
+  geraeteMqttHost?: string;
+  geraeteMqttPort?: number;
+  geraeteMqttTopic?: string;   // Basis-Topic, z. B. "mitsubishi2mqtt"
   // Beliebige weitere URLs je Quelle (z. B. Link zur Weboberfläche des Geräts),
   // jeweils mit einem Beschreibungstext, der als Link-Name dient. Rein zur
   // Anzeige – diese URLs werden nicht abgefragt.

@@ -117,6 +117,8 @@ export function HilfeApiPage() {
           { path: "/api/room/day", params: "room=<name>&date=YYYY-MM-DD", desc: "Tagesverlauf aller Geräte eines Raums." },
           { path: "/api/rooms", desc: "Liste aller konfigurierten Räume." },
           { path: "/api/switchable", desc: "Schaltbare Verbraucher (für Automatisierung/Steuerung)." },
+          { path: "/api/hue/devices", desc: "Alle Untergeräte aller Hue-Bridges (Leuchten/Sensoren mit Zustand)." },
+          { path: "/api/ccu/devices", desc: "Alle Untergeräte aller Homematic-CCU-Quellen (Kanäle mit Zustand)." },
         ]}
       />
 
@@ -191,6 +193,37 @@ export function HilfeApiPage() {
       />
 
       <ApiGroup
+        title="Geräte-Integrationen"
+        note="Smart-Home- und Geräte-Anbindungen: Zustände lesen (Schalten siehe Schreib-Endpunkte)."
+        eps={[
+          { path: "/api/hue/devices", desc: "Philips-Hue-Untergeräte mit Zustand (Leuchten, Sensoren)." },
+          { path: "/api/ccu/devices", desc: "Homematic-Geräte/-Kanäle mit Zustand, Alarm-Modus und Automatisierungen." },
+          { path: "/api/klima/devices", desc: "Mitsubishi-Klimaanlagen mit Zustand (power/mode/temp/room/fan/vane)." },
+          { path: "/api/vallox/devices", desc: "Vallox-Lüftungsanlagen mit Zustand (an/aus, Stufe, Temperaturen)." },
+          { path: "/api/prusa/devices", desc: "Prusa-3D-Drucker mit Druckauftrag, Telemetrie und verlinktem Schalter." },
+          { path: "/api/air/devices", desc: "Luftsensoren mit Messwerten (PM2.5, PM10, Temperatur, Luftdruck)." },
+          { path: "/api/air/verlauf", params: "von&bis&sourceId", sample: "/api/air/verlauf?von=2026-09-01T00:00:00&bis=2026-09-02T00:00:00", desc: "Luftsensor-Tagesverlauf (persistierte Messwerte) für den Zeitbereich." },
+          { path: "/api/wetter", params: "tage=N", sample: "/api/wetter?tage=7", desc: "Wettervorhersage (DWD/Bright Sky) für den PV-Standort, stündlich + Tage." },
+          { path: "/api/securityspy/cameras", desc: "SecuritySpy-Kameraliste (Nummer, Name, Bewegungsstatus)." },
+          { path: "/api/securityspy/recordings", params: "cam=N&tage=T", sample: "/api/securityspy/recordings?tage=14", desc: "Aufnahmenliste (optional nach Kamera/Alter gefiltert)." },
+          { path: "/api/securityspy/image", params: "sourceId&cam=N", sample: "/api/securityspy/image?sourceId=cam1&cam=2", desc: "Aktuelles Standbild einer Kamera (Proxy)." },
+          { path: "/api/securityspy/stream", params: "sourceId&cam=N", sample: "/api/securityspy/stream?sourceId=cam1&cam=2", desc: "Live-MJPEG-Stream einer Kamera (Proxy)." },
+          { path: "/api/securityspy/recording", params: "sourceId&href", sample: "/api/securityspy/recording?sourceId=cam1&href=...", desc: "Eine Aufnahme abspielen/herunterladen (Proxy mit Spulen)." },
+          { path: "/api/source/datapoints", params: "sourceId", sample: "/api/source/datapoints?sourceId=air1", desc: "Verfügbare Datenpunkte einer Quelle (für die Persistierungs-Auswahl)." },
+          { path: "/api/mqtt/status", desc: "Status des eingebauten MQTT-Brokers (Port 1883)." },
+          { path: "/api/mqtt/topics", desc: "Empfangene MQTT-Topics mit Nachrichtenzahl und Zeitpunkt." },
+          { path: "/api/access/log", params: "limit=N", sample: "/api/access/log?limit=200", desc: "Zugangskontrolle: Protokoll empfangener Karten/PINs mit Ergebnis." },
+          { path: "/api/access/status", desc: "Zugangskontrolle: Online-Status der Reader und letztes Ereignis." },
+          { path: "/api/access/entries", desc: "Zugangskontrolle: konfigurierte gültige Tags/PINs (Whitelist)." },
+          { path: "/api/evcc/devices", desc: "Elektroauto (evcc): Live-Status je Ladepunkt (Modus, Ladestand, Verbindung, Leistung, Limit)." },
+          { path: "/api/evcc/sessions", params: "sourceId", sample: "/api/evcc/sessions?sourceId=...", desc: "Elektroauto: alle Ladevorgänge (Beginn, kWh, Sonnenanteil, Kosten, Dauer)." },
+          { path: "/api/rueckblick", params: "ebene&jahr&monat", sample: "/api/rueckblick?ebene=jahr&jahr=2026", desc: "Energie-Rückblick: aggregierte Kennzahlen und Highlights je Jahr/Monat." },
+          { path: "/api/co2/config", desc: "CO₂: ob ENTSO-E-Token gesetzt ist und aktuelle Netzintensität (g/kWh)." },
+          { path: "/api/co2/bilanz", params: "ebene&jahr&monat", desc: "CO₂-Bilanz (aufgezeichnete Netzintensität × Netzbezug) für den Zeitraum." },
+        ]}
+      />
+
+      <ApiGroup
         title="Konfiguration & Quellen"
         note="Konfigurierte Geräte, Regeln und Programmstruktur (nur lesend)."
         eps={[
@@ -204,8 +237,13 @@ export function HilfeApiPage() {
           { path: "/api/lppcontrol/config", desc: "Konfiguration, Regelstatus und Protokoll der §9-Einspeisedrosselung (Live-Regelung mehrerer Wechselrichter)." },
           { path: "/api/lppcontrol/erkennen", desc: "Steuerbare Wechselrichter automatisch aus den Quellen erkennen (Growatt/Hoymiles)." },
           { path: "/api/lpcmonitor/config", desc: "§14a-Überwachung: SteuVE-Liste, Live-Status (Summenbezug gegen Limit) und Protokoll." },
+          { path: "/api/anomalie/status", desc: "Anomalie-Erkennung: aktive und quittierte Auffälligkeiten, Detektor-Konfiguration und Verlauf (beendete)." },
           { path: "/api/settings/sections", desc: "Verfügbare Einstellungsbereiche." },
           { path: "/api/menu", desc: "Gespeicherte Menüstruktur (Reihenfolge/Gruppierung)." },
+          { path: "/api/menu/expanded", desc: "Auf-/Zuklapp-Zustand der Menügruppen (geräteübergreifend)." },
+          { path: "/api/notify/channels", desc: "Benachrichtigungs-Kanäle (mehrere ntfy-Topics)." },
+          { path: "/api/notify/triggers", desc: "Katalog aller Benachrichtigungs-Auslöser (Regeln, Anomalien, Übergänge)." },
+          { path: "/api/notify/routing", desc: "Zuordnung Auslöser → Kanäle." },
           { path: "/api/tileorder", desc: "Gespeicherte Reihenfolge der sortierbaren Kachel-Bereiche (Drag&Drop)." },
           { path: "/api/rules", desc: "Automatisierungsregeln." },
           { path: "/api/rule-groups", desc: "Gruppen von Automatisierungsregeln." },
@@ -221,8 +259,10 @@ export function HilfeApiPage() {
         eps={[
           { path: "/api/profiles", desc: "Verfügbare Lastprofile." },
           { path: "/api/profiles/<name>/day", params: "date=YYYY-MM-DD&jv=<Jahresverbrauch>", desc: "Tagesverlauf eines Lastprofils, skaliert auf einen Jahresverbrauch." },
+          { path: "/api/profiles/<name>/download", desc: "Ein Lastprofil als CSV-Datei herunterladen." },
           { path: "/api/genprofiles", desc: "Verfügbare Erzeugerprofile." },
           { path: "/api/genprofiles/<name>/day", params: "date=YYYY-MM-DD&kwp=<kWp>", desc: "Tagesverlauf eines Erzeugerprofils, skaliert auf eine Anlagenleistung." },
+          { path: "/api/genprofiles/<name>/download", desc: "Ein Erzeugerprofil als CSV-Datei herunterladen." },
           { path: "/api/viertelstunden", params: "date=YYYY-MM-DD", sample: `/api/viertelstunden?date=${d}`, desc: "Rohe Viertelstundenwerte (Bezug, Einspeisung, Eigenverbrauch) eines Tages." },
           { path: "/api/data/calendar", desc: "Kalenderübersicht der Tage mit gespeicherten Daten." },
           { path: "/api/data/day", params: "date=YYYY-MM-DD", desc: "Alle gespeicherten Rohdaten eines einzelnen Tages." },
@@ -259,6 +299,20 @@ export function HilfeApiPage() {
           { method: "POST", path: "/api/sources", desc: "Quellenliste speichern (anlegen/ändern/löschen über die komplette Liste)." },
           { method: "POST", path: "/api/sources/test", desc: "Eine Quelle testweise abfragen (Verbindungsprüfung)." },
           { method: "POST", path: "/api/switch/test", desc: "Einen schaltbaren Verbraucher testweise ein-/ausschalten." },
+          { method: "POST", path: "/api/hue/switch", desc: "Eine Hue-Leuchte schalten (sourceId, serviceId, on, optional brightness)." },
+          { method: "POST", path: "/api/ccu/switch", desc: "Einen Homematic-CCU-Datenpunkt schalten (sourceId, iseId, wert)." },
+          { method: "POST", path: "/api/ccu/alarm", desc: "Homematic Alarm-Modus setzen (unscharf/anwesenheit/vollschutz)." },
+          { method: "POST", path: "/api/ccu/sirene", desc: "Homematic Sirene auslösen/stoppen (sicherheitskritisch)." },
+          { method: "POST", path: "/api/klima/set", desc: "Mitsubishi-Klimaanlage steuern (feld: power/mode/temp/fan/vane/wideVane)." },
+          { method: "POST", path: "/api/vallox/set", desc: "Vallox-Lüftung steuern (feld: power/speed)." },
+          { method: "POST", path: "/api/access/entries", desc: "Zugangskontrolle: gültige Tags/PINs samt Aktionen speichern." },
+          { method: "POST", path: "/api/evcc/mode", desc: "Elektroauto (evcc): Lademodus setzen (off/pv/minpv/now)." },
+          { method: "POST", path: "/api/evcc/limitsoc", desc: "Elektroauto (evcc): Ladelimit (Ziel-SoC in %) setzen." },
+          { method: "POST", path: "/api/evcc/mincurrent", desc: "Elektroauto (evcc): minimalen Ladestrom (A) setzen." },
+          { method: "POST", path: "/api/evcc/maxcurrent", desc: "Elektroauto (evcc): maximalen Ladestrom (A) setzen." },
+          { method: "POST", path: "/api/evcc/phases", desc: "Elektroauto (evcc): Phasen setzen (0=auto/1/3)." },
+          { method: "POST", path: "/api/co2/config", desc: "CO₂: ENTSO-E-Security-Token für die Netzintensität speichern." },
+          { method: "POST", path: "/api/co2/backfill", desc: "CO₂: Vergangenheit aus ENTSO-E-Historie nachladen (tage=30/90/365)." },
           { method: "POST", path: "/api/sinks", desc: "Senken (emulierte Zähler) speichern." },
           { method: "POST", path: "/api/exthems/formel/check", desc: "Formel-Größe fürs externe HEMS gegen erlaubte Variablen prüfen." },
           { method: "POST", path: "/api/exthems/beschreibung", desc: "Verständliche Schnittstellenbeschreibung für eine extHems-Senke erzeugen." },
@@ -270,6 +324,10 @@ export function HilfeApiPage() {
           { method: "POST", path: "/api/lppcontrol/config", desc: "§9-Umsetzung konfigurieren (Wechselrichter-Liste in Drosselreihenfolge, Dry-Run/Scharf, Limit-Typ)." },
           { method: "POST", path: "/api/lppcontrol/test", desc: "Test-Schreibvorgang für einen Wechselrichter (invId + prozent, respektiert Dry-Run)." },
           { method: "POST", path: "/api/lpcmonitor/config", desc: "§14a-Überwachung konfigurieren (SteuVE-Liste, Warnschwelle, aktiv)." },
+          { method: "POST", path: "/api/anomalie/config", desc: "Anomalie-Erkennung konfigurieren (Detektoren an/aus, Empfindlichkeit, Ignorier-Liste)." },
+          { method: "POST", path: "/api/anomalie/quittieren", desc: "Eine aktive Auffälligkeit quittieren (per id); sie wird bis zur Auflösung unterdrückt." },
+          { method: "POST", path: "/api/anomalie/feedback", desc: "Eine Auffälligkeit bewerten (richtig|unwichtig|fehlalarm); quittiert zugleich. Auch für beendete möglich." },
+          { method: "POST", path: "/api/anomalie/vorschlag", desc: "Einen aus dem Feedback abgeleiteten Verbesserungsvorschlag per Ein-Klick übernehmen." },
           { method: "POST", path: "/api/sinks/formula/check", desc: "Senken-Formel auf Gültigkeit prüfen." },
           { method: "POST", path: "/api/sinks/register-ct", desc: "Einen CT-Zähler bei der Emulation registrieren." },
           { method: "POST", path: "/api/sinks/ctfade", desc: "Fadeout (kontrolliertes Herunterfahren) einer CT-Senke schalten." },
@@ -277,6 +335,9 @@ export function HilfeApiPage() {
           { method: "POST", path: "/api/speicher/reorder", desc: "Reihenfolge der Speicher ändern." },
           { method: "POST", path: "/api/rooms", desc: "Räume speichern." },
           { method: "POST", path: "/api/menu", desc: "Menüstruktur speichern." },
+          { method: "POST", path: "/api/menu/expanded", desc: "Auf-/Zuklapp-Zustand der Menügruppen speichern." },
+          { method: "POST", path: "/api/notify/channels", desc: "Benachrichtigungs-Kanäle speichern." },
+          { method: "POST", path: "/api/notify/routing", desc: "Auslöser-zu-Kanal-Zuordnung speichern." },
           { method: "DELETE", path: "/api/menu", desc: "Menüstruktur auf Standard zurücksetzen." },
           { method: "POST", path: "/api/tileorder", desc: "Reihenfolge eines Kachel-Bereichs speichern (bereich + ids)." },
           { method: "DELETE", path: "/api/tileorder", desc: "Kachel-Reihenfolge zurücksetzen (optional ?bereich=…, sonst alle)." },
@@ -321,8 +382,10 @@ export function HilfeApiPage() {
           { method: "POST", path: "/api/rule-groups", desc: "Regelgruppen speichern." },
           { method: "POST", path: "/api/rules/<id>/trigger", desc: "Eine Regel manuell auslösen." },
           { method: "POST", path: "/api/rules/trigger-daily-test", desc: "Täglichen Auslöser testweise anstoßen." },
-          { method: "POST", path: "/api/notify", desc: "Benachrichtigungseinstellungen speichern." },
+          { method: "POST", path: "/api/notify", desc: "Benachrichtigungseinstellungen speichern (inkl. thematischer Schalter)." },
           { method: "POST", path: "/api/notify/test", desc: "Test-Benachrichtigung senden." },
+          { method: "POST", path: "/api/overviewtiles", desc: "Schnellstart-Kacheln der Übersicht speichern (Typ + Ziel je Kachel)." },
+          { method: "POST", path: "/api/tilefolders", desc: "Kachel-Ordner der Übersicht speichern (Bündelung/Reihenfolge)." },
         ]}
       />
 

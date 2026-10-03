@@ -6,23 +6,39 @@ import { OffisLogo } from "./OffisLogo";
 import { FluxLogo } from "./FluxLogo";
 import { useVersion } from "./useVersion";
 
-export type Child = { id: string; label: string };
-export type Item = { id: string; label: string; children?: Child[] };
-export type MenuConfig = Array<{ id: string; children?: Array<{ id: string }> }>;
+export type Child = { id: string; label: string; hidden?: boolean };
+export type Item = { id: string; label: string; hidden?: boolean; children?: Child[] };
+export type MenuConfig = Array<{ id: string; hidden?: boolean; children?: Array<{ id: string; hidden?: boolean }> }>;
 
-export function buildItems(hasMarstek: boolean): Item[] {
+export function buildItems(hasMarstek: boolean, hasSecuritySpy = false, hasAccessReader = false, hasEvcc = false, alle = false): Item[] {
   const detailsChildren: Child[] = [
     { id: "status", label: "Status" },
+    { id: "anomalie", label: "Anomalie-Erkennung" },
     { id: "verbraucher", label: "Verbraucher" },
     { id: "waermepumpe", label: "Wärmepumpe" },
     { id: "warmwasser", label: "Warmwasser" },
     { id: "stromverbrauch", label: "Stromverbrauch" },
     { id: "stromerzeugung", label: "Stromerzeugung" },
     { id: "boersenstrompreis", label: "Börsenstrompreis" },
+    { id: "wetter", label: "Wetter" },
     { id: "energysharing", label: "Energy Sharing" },
     { id: "wasserverbrauch", label: "Wasserverbrauch" },
+    { id: "rueckblick", label: "Energie-Rückblick" },
   ];
-  if (hasMarstek) detailsChildren.push({ id: "marstek", label: "Speicher" });
+  // Optionale (geräteabhängige) Seiten. Im "alle"-Modus (Menü-Editor) werden sie
+  // immer aufgeführt, damit die Reihenfolge-Konfiguration IMMER vollständig ist –
+  // unabhängig davon, ob die jeweilige Hardware gerade erkannt wird. Neue optionale
+  // Seiten hier eintragen; sie erscheinen dann automatisch auch im Editor.
+  const optionale: Array<{ id: string; label: string; aktiv: boolean }> = [
+    { id: "marstek", label: "Speicher", aktiv: hasMarstek },
+    { id: "kameras", label: "Kameras", aktiv: hasSecuritySpy },
+    { id: "zugangskontrolle", label: "Zugangskontrolle", aktiv: hasAccessReader },
+    { id: "elektroauto", label: "Elektroauto", aktiv: hasEvcc },
+  ];
+  for (const o of optionale) {
+    if (alle || o.aktiv) detailsChildren.push({ id: o.id, label: o.label });
+  }
+
   return [
     { id: "", label: "Gesamtansicht" },
     { id: "details", label: "Details", children: detailsChildren },
@@ -63,7 +79,7 @@ export function buildItems(hasMarstek: boolean): Item[] {
 // Umbenennungen in Updates automatisch greifen. Items/Children, die in der
 // Config fehlen (z.B. neu hinzugekommen), werden hinten angehängt, sodass nie
 // ein Menüpunkt verschwindet.
-export function applyMenuConfig(defaults: Item[], config: MenuConfig | null): Item[] {
+export function applyMenuConfig(defaults: Item[], config: MenuConfig | null, imEditor = false): Item[] {
   if (!config || config.length === 0) return defaults;
   // Nachschlage-Index über alle bekannten Items und Children (mit Labels).
   const topById = new Map<string, Item>();
@@ -79,23 +95,33 @@ export function applyMenuConfig(defaults: Item[], config: MenuConfig | null): It
     const def = topById.get(cfgItem.id);
     if (!def) continue; // unbekannte ID ignorieren
     usedTop.add(def.id);
+    // Sichtbarkeit: im aktiven Menü versteckte Top-Punkte auslassen; im Editor
+    // bleiben sie (mit hidden-Flag) erhalten, damit die Checkbox sie zeigt.
+    const topHidden = cfgItem.hidden === true;
     let children: Child[] | undefined;
     if (def.children) {
       children = [];
       for (const cc of cfgItem.children ?? []) {
         const cdef = childById.get(cc.id);
-        // Kind nur übernehmen, wenn es im Default DIESES Items vorkommt.
         if (cdef && (def.children.some((x) => x.id === cc.id))) {
-          children.push(cdef);
+          if (imEditor) children.push({ ...cdef, hidden: cc.hidden === true } as any);
+          else if (cc.hidden !== true) children.push(cdef);
+          // WICHTIG: auch ausgeblendete Kinder als verarbeitet markieren, sonst
+          // werden sie unten als "fehlend" wieder angehängt und die Ausblendung
+          // ginge verloren.
           usedChild.add(cc.id);
         }
       }
-      // Fehlende (neue) Kinder dieses Items hinten anhängen.
+      // Fehlende (neue) Kinder dieses Items hinten anhängen (sichtbar).
       for (const cdef of def.children) {
-        if (!children.some((x) => x.id === cdef.id)) { children.push(cdef); usedChild.add(cdef.id); }
+        // Nur WIRKLICH neue Kinder anhängen: solche, die noch nicht in der
+        // gespeicherten Config vorkamen (usedChild). Ein ausgeblendetes Kind wurde
+        // bereits verarbeitet (usedChild) und darf NICHT wieder auftauchen.
+        if (!usedChild.has(cdef.id) && !children.some((x) => x.id === cdef.id)) { children.push(cdef); usedChild.add(cdef.id); }
       }
     }
-    result.push({ ...def, children });
+    if (imEditor) result.push({ ...def, hidden: topHidden, children } as any);
+    else if (!topHidden) result.push({ ...def, children });
   }
   // Fehlende (neue) Top-Items hinten anhängen.
   for (const def of defaults) {
@@ -111,6 +137,9 @@ export function Menu({
   open,
   setOpen,
   hasMarstek = false,
+  hasSecuritySpy = false,
+  hasAccessReader = false,
+  hasEvcc = false,
 }: {
   route: string;
   navigate: (r: string) => void;
@@ -118,9 +147,12 @@ export function Menu({
   open: boolean;
   setOpen: (o: boolean) => void;
   hasMarstek?: boolean;
+  hasSecuritySpy?: boolean;
+  hasAccessReader?: boolean;
+  hasEvcc?: boolean;
 }) {
   const version = useVersion();
-  const defaults = buildItems(hasMarstek);
+  const defaults = buildItems(hasMarstek, hasSecuritySpy, hasAccessReader, hasEvcc);
   // Gespeicherte Menü-Konfiguration laden (Reihenfolge/Gruppierung). Bis sie da
   // ist, gilt der Default. Änderungen im Editor lösen ein "menuconfigchanged"-
   // Event aus, auf das wir hier neu laden.
@@ -136,11 +168,19 @@ export function Menu({
     return () => window.removeEventListener("menuconfigchanged", load);
   }, []);
   const ITEMS = applyMenuConfig(defaults, menuConfig);
-  // Welche Gruppen sind ausgeklappt? Standardmäßig die Gruppe der aktiven Seite.
-  // Standardmäßig alle Gruppen ausgeklappt (Desktop zeigt so die volle Struktur).
+  // Welche Gruppen sind ausgeklappt? Standardmäßig alle – AUSSER "hilfe", das
+  // spart Platz im mittlerweile langen Menü. Die Hilfe-Gruppe klappt automatisch
+  // auf, sobald man eine Hilfe-Seite ansteuert (siehe useEffect unten).
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(ITEMS.filter((it) => it.children).map((it) => it.id))
+    () => new Set(ITEMS.filter((it) => it.children && it.id !== "hilfe").map((it) => it.id))
   );
+  // Gespeicherten Klappzustand vom Server laden (geräteübergreifend). Nur wenn
+  // bereits ein Zustand gespeichert wurde – sonst bleiben die Standard-Defaults.
+  useEffect(() => {
+    fetch("/api/menu/expanded").then((r) => r.json()).then((j) => {
+      if (j?.ok && j.gesetzt && Array.isArray(j.expanded)) setExpanded(new Set(j.expanded));
+    }).catch(() => {});
+  }, []);
 
   // Beim Navigieren zu einer Seite die zugehörige Gruppe offen halten.
   useEffect(() => {
@@ -157,6 +197,8 @@ export function Menu({
     setExpanded((prev) => {
       const s = new Set(prev);
       s.has(id) ? s.delete(id) : s.add(id);
+      // Neuen Zustand serverseitig merken (geräteübergreifend).
+      fetch("/api/menu/expanded", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expanded: [...s] }) }).catch(() => {});
       return s;
     });
 

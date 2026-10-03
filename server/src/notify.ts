@@ -21,55 +21,77 @@ export interface NtfyOptions {
   // Schlüssel zur Entprellung: gleiche Meldung wird frühestens nach
   // minIntervalMin erneut gesendet. Ohne key keine Entprellung.
   dedupeKey?: string;
+  // Auslöser-ID für das Kanal-Routing (z. B. "rule:<id>", "anomalie:<detektor>",
+  // "transition:securityspy"). Bestimmt, an welche Kanäle gesendet wird.
+  triggerId?: string;
 }
 
 // Sendet eine Nachricht an das konfigurierte ntfy-Topic. Liefert true bei
 // Erfolg, false wenn deaktiviert/entprellt/fehlgeschlagen.
-export async function sendNtfy(message: string, opts: NtfyOptions = {}): Promise<boolean> {
-  const cfg = db.loadNotifySettings();
-  if (!cfg.enabled) return false;
-  if (!cfg.topic.trim()) return false;
-
-  // Entprellung je Ereignis
-  if (opts.dedupeKey) {
-    const now = Date.now();
-    const last = lastSent[opts.dedupeKey] ?? 0;
-    if (now - last < cfg.minIntervalMin * 60_000) return false;
-  }
-
-  const base = cfg.server.trim().replace(/\/+$/, "") || "https://ntfy.sh";
-  const url = `${base}/${encodeURIComponent(cfg.topic.trim())}`;
+// Versand an EINEN konkreten Kanal (Server+Topic+Priorität).
+async function sendToChannel(ch: db.NtfyChannel, message: string, opts: NtfyOptions): Promise<boolean> {
+  if (!ch.enabled || !ch.topic.trim()) return false;
+  const base = (ch.server || "").trim().replace(/\/+$/, "") || "https://ntfy.sh";
+  const url = `${base}/${encodeURIComponent(ch.topic.trim())}`;
   const headers: Record<string, string> = { "Content-Type": "text/plain" };
   if (opts.title) headers["Title"] = sanitizeHeader(opts.title);
-  if (opts.priority) headers["Priority"] = String(opts.priority);
+  const prio = opts.priority ?? ch.priority;
+  if (prio) headers["Priority"] = String(prio);
   if (opts.tags?.length) headers["Tags"] = opts.tags.join(",");
-
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: message,
-      signal: controller.signal,
-    });
+    const res = await fetch(url, { method: "POST", headers, body: message, signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) {
-      db.addLog(db.LOG_LEVELS.warn, "notify", `ntfy HTTP ${res.status}`);
-      return false;
-    }
-    if (opts.dedupeKey) lastSent[opts.dedupeKey] = Date.now();
+    if (!res.ok) { db.addLog(db.LOG_LEVELS.warn, "notify", `ntfy HTTP ${res.status} (${ch.name})`); return false; }
     return true;
   } catch (e: any) {
-    db.addLog(db.LOG_LEVELS.warn, "notify", `ntfy Fehler: ${e?.message ?? e}`);
+    db.addLog(db.LOG_LEVELS.warn, "notify", `ntfy Fehler (${ch.name}): ${e?.message ?? e}`);
     return false;
   }
+}
+
+// Sendet eine Nachricht. Mit opts.triggerId geht sie an alle diesem Auslöser
+// zugeordneten Kanäle (Routing). Ohne triggerId (Legacy) an den ersten Kanal.
+export async function sendNtfy(message: string, opts: NtfyOptions = {}): Promise<boolean> {
+  // Entprellung je Ereignis (global, kanalübergreifend).
+  const cfg = db.loadNotifySettings();
+  if (opts.dedupeKey) {
+    const now = Date.now();
+    const last = lastSent[opts.dedupeKey] ?? 0;
+    if (now - last < (cfg.minIntervalMin || 5) * 60_000) return false;
+  }
+
+  const channels = db.loadNtfyChannels();
+  if (channels.length === 0) return false;
+
+  // Zielkanäle bestimmen.
+  let ziele: db.NtfyChannel[];
+  if (opts.triggerId) {
+    const routing = db.loadNotifyRouting();
+    const ids = new Set(routing[opts.triggerId] ?? []);
+    ziele = channels.filter((c) => ids.has(c.id));
+    if (ziele.length === 0) return false; // Auslöser keinem Kanal zugeordnet -> nichts senden
+  } else {
+    ziele = channels.slice(0, 1); // Legacy/Test: erster Kanal
+  }
+
+  let erfolg = false;
+  for (const ch of ziele) { if (await sendToChannel(ch, message, opts)) erfolg = true; }
+  if (erfolg && opts.dedupeKey) lastSent[opts.dedupeKey] = Date.now();
+  return erfolg;
 }
 
 // ntfy-Header dürfen keine Zeilenumbrüche enthalten; Umlaute werden von ntfy
 // akzeptiert, Steuerzeichen entfernen wir.
 function sanitizeHeader(s: string): string {
   return s.replace(/[\r\n]+/g, " ").trim();
+}
+
+// Testnachricht an einen konkreten Kanal (ignoriert enabled, für den Test-Button).
+export async function sendNtfyTestChannel(ch: db.NtfyChannel): Promise<{ ok: boolean; error?: string }> {
+  const ok = await sendToChannel({ ...ch, enabled: true }, "FLUX-Testnachricht – dieser Kanal funktioniert.", { title: `Test: ${ch.name}`, priority: 3, tags: ["bell"] });
+  return ok ? { ok: true } : { ok: false, error: "Versand fehlgeschlagen (Server/Topic prüfen)" };
 }
 
 // Testnachricht (ignoriert enabled-Flag, damit man beim Einrichten testen kann).

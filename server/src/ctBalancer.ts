@@ -102,10 +102,20 @@ const SAT_GAP_W = 80;
 // Sicherheitsaufschlag auf die gelernte Grenze (W): die reale Grenze liegt etwas
 // über dem zuletzt gesehenen Wert; so wird sie nicht zu niedrig eingefroren.
 const SAT_CAP_MARGIN_W = 50;
+// Mindest-Rest (W), ab dem im alternierenden Modus der zweite Speicher zugezogen
+// wird. Verhindert "Mitdümpeln" mit Kleinstlast bei normaler Regelabweichung des
+// aktiven Speichers. Muss klein genug sein, dass ein echtes Limit noch sauber
+// verteilt wird, aber groß genug gegen Rausch-Restwerte.
+const ALT_REST_MIN_W = 120;
 
 // SoC-Stufen für die alternierende Entladung (in %). Der aktive Speicher entlädt,
 // bis er die nächste Stufe UNTER seinem SoC bei Aktivierung erreicht.
 const SOC_STUFEN = [100, 75, 50, 25, 12];
+// Ab wie vielen Prozentpunkten SoC-Vorsprung ein ANDERER Speicher den aktiven
+// sofort ablöst (übersteuert die Stufen-Hysterese). Eine volle Stufe = 25 pp:
+// so bleiben normale kleine Unterschiede in der Hysterese, aber ein deutlich
+// vollerer Speicher übernimmt sofort (verhindert Leerlaufen des falschen).
+const SWITCH_HYSTERESE_PP = 25;
 
 // Liefert die nächste Stufengrenze unterhalb eines SoC-Werts (die Schwelle, bei
 // deren Unterschreiten der aktive Speicher gewechselt wird). Für SoC über 100
@@ -379,12 +389,21 @@ export class CtBalancer {
       // die vorsichtigere Glättung (SAT_CONFIRM_COUNT), da dort kein einzelner
       // Speicher die Last allein stemmen soll.
       const confirmSchwelle = damping?.alternierendeEntladung ? 2 : SAT_CONFIRM_COUNT;
-      if (tgt > SAT_GAP_W && rp < tgt - SAT_GAP_W) {
+      // Im alternierenden Modus muss der aktive Speicher DEUTLICHER hinter dem Ziel
+      // zurückbleiben, bevor eine Entladegrenze gelernt wird – sonst wird schon bei
+      // normaler Regelträgheit (wenige Watt Rückstand) eine zu niedrige Grenze
+      // gelernt und der zweite Speicher unnötig zugezogen. Größerer Abstand = der
+      // aktive muss real am Anschlag hängen, nicht nur kurz nachhinken.
+      const satAbstand = damping?.alternierendeEntladung ? SAT_GAP_W + ALT_REST_MIN_W : SAT_GAP_W;
+      if (tgt > SAT_GAP_W && rp < tgt - satAbstand) {
         x.satDischargeCount++;
         if (x.satDischargeCount >= confirmSchwelle) {
           const beobachtet = Math.abs(rp) + SAT_CAP_MARGIN_W;
           x.capDischargeW = x.capDischargeW == null ? beobachtet : Math.max(x.capDischargeW, beobachtet);
         }
+      } else if (damping?.alternierendeEntladung) {
+        // Innerhalb der Toleranz -> Zähler zurücksetzen (kein schleichendes Lernen).
+        x.satDischargeCount = 0;
       }
       if (x.capDischargeW != null && Math.abs(rp) > x.capDischargeW + SAT_GAP_W && rp > 0) {
         x.capDischargeW = undefined;
@@ -522,12 +541,27 @@ export class CtBalancer {
     };
 
     // Ist der aktuelle aktive Speicher noch gültig (vorhanden, SoC bekannt, über
-    // seiner Wechsel-Stufe)? Dann beibehalten.
+    // seiner Wechsel-Stufe)? Dann grundsätzlich beibehalten (Stufen-Hysterese
+    // gegen zu häufiges Wechseln) – ABER nur, solange kein anderer Speicher
+    // DEUTLICH voller ist. Sonst würde ein aktiver Speicher bis zu seiner Stufe
+    // leerlaufen, obwohl ein anderer längst deutlich mehr Ladung hat (Fehlerfall:
+    // aktiver 23 %, anderer 95 %). Als "deutlich" gilt mehr als eine SoC-Stufe
+    // Abstand (SWITCH_HYSTERESE_PP Prozentpunkte).
     if (this.aktiverKey != null) {
       const cur = active.find((x) => x.key === this.aktiverKey);
       const curSoc = cur ? socOf(cur) : null;
       if (cur && curSoc != null && this.aktiverStufe != null && curSoc > this.aktiverStufe) {
-        return; // aktiver Speicher bleibt aktiv
+        // Prüfen, ob ein anderer Speicher deutlich voller ist.
+        let maxAnderer = -1;
+        for (const x of active) {
+          if (x.key === this.aktiverKey) continue;
+          const s = socOf(x);
+          if (s != null && s > maxAnderer) maxAnderer = s;
+        }
+        if (maxAnderer - curSoc < SWITCH_HYSTERESE_PP) {
+          return; // aktiver Speicher bleibt aktiv (kein deutlich vollerer da)
+        }
+        // sonst: durchfallen zur Neubestimmung (wechselt auf den volleren)
       }
     }
 
@@ -607,6 +641,14 @@ export class CtBalancer {
     const aktivReal = Math.max(0, aktiv.reportedPower);
     const aktivBasis = Math.max(aktivReal, Math.min(capAktiv, aktivZiel));
     const rest = Math.max(0, gesamtZiel - aktivBasis);
+    // Mindest-Restschwelle: Der zweite Speicher wird erst zugezogen, wenn der Rest
+    // einen sinnvollen Betrag überschreitet. Ohne diese Schwelle bekäme er schon bei
+    // wenigen Watt Regelabweichung des aktiven Speichers eine Kleinstlast (z. B.
+    // -10 W), obwohl der aktive noch weit von seinem echten Limit entfernt ist.
+    // Erst wenn der aktive spürbar am Anschlag hängt (Rest > Schwelle), springt der
+    // zweite ein. Für den echten Sättigungsfall (aktiver wirklich am Limit) bleibt
+    // die Umverteilung voll erhalten.
+    if (rest <= ALT_REST_MIN_W) return 0;
     if (rest <= 0) return 0;
     const others = active.filter((x) => x.key !== aktiv.key);
     const restWeight = others.reduce((s, x) => s + (x.weight > 0 ? x.weight : 0), 0);

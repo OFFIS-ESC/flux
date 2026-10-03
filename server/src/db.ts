@@ -114,6 +114,48 @@ db.exec(`
     value REAL NOT NULL      -- elektrische Leistungsaufnahme der WP (W, ganzzahlig)
   );
   CREATE INDEX IF NOT EXISTS idx_wp_power_ts ON wp_power(ts);
+  -- Generische Geräte-Datenreihen (Luftsensor, Lüftung, 3D-Drucker, später mehr).
+  -- Nur ausgewählte, nicht-energiebezogene Datenpunkte je Quelle werden hier
+  -- persistiert (Auswahl je Quelle in der Konfiguration, Default aus).
+  CREATE TABLE IF NOT EXISTS device_data (
+    source_id TEXT NOT NULL,  -- Quellen-ID
+    ts        TEXT NOT NULL,  -- Zeitpunkt, lokal: YYYY-MM-DDTHH:MM:SS
+    label     TEXT NOT NULL,  -- Name des Datenpunkts
+    value     REAL NOT NULL,  -- numerischer Wert (bool -> 0/1)
+    PRIMARY KEY (source_id, ts, label)
+  );
+  CREATE INDEX IF NOT EXISTS idx_device_data ON device_data(source_id, label, ts);
+  -- Hochaufgelöste Energiemessung (elektrische Leistung) je Gerät, entkoppelt von
+  -- device_data. Analog zur früheren wp_power, aber für beliebige Geräte. Der
+  -- Leistungswert schwankt fast bei jedem Poll; die Entkopplung hält die
+  -- Zustands-Änderungserkennung der übrigen Datenpunkte wirksam.
+  CREATE TABLE IF NOT EXISTS device_power (
+    source_id TEXT NOT NULL,
+    ts        TEXT NOT NULL,
+    value     REAL NOT NULL,   -- elektrische Leistungsaufnahme (W, ganzzahlig)
+    PRIMARY KEY (source_id, ts)
+  );
+  CREATE INDEX IF NOT EXISTS idx_device_power ON device_power(source_id, ts);
+  -- Zugangskontrolle: Protokoll empfangener Karten/PINs.
+  CREATE TABLE IF NOT EXISTS access_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,   -- Reader-Quelle
+    ts        TEXT NOT NULL,   -- Empfangszeitpunkt (Wanduhr, lokal ISO)
+    art       TEXT NOT NULL,   -- "card" | "pin"
+    wert      TEXT NOT NULL,   -- gelesene ID bzw. eingegebene PIN
+    bits      INTEGER,         -- Frame-Länge (26/34) bzw. 4
+    ergebnis  TEXT,            -- "ok" | "denied" | "unbekannt" (Schritt 2)
+    name      TEXT             -- Klartext-Name des Whitelist-Eintrags (Schritt 2)
+  );
+  CREATE INDEX IF NOT EXISTS idx_access_log ON access_log(source_id, ts);
+  -- CO₂-Bilanz: je Viertelstunde die Netz-CO₂-Intensität (g/kWh) und die daraus
+  -- mit dem Netzbezug berechneten Emissionen (g). Grundlage der echten CO₂-Bilanz.
+  CREATE TABLE IF NOT EXISTS co2_log (
+    ts          TEXT PRIMARY KEY,  -- Viertelstunden-Zeitstempel (lokal ISO)
+    intensitaet REAL NOT NULL,     -- g CO₂ / kWh (Netz)
+    netzbezugKwh REAL NOT NULL,    -- Netzbezug in dieser Viertelstunde (kWh)
+    emissionenG REAL NOT NULL      -- intensitaet * netzbezugKwh
+  );
   CREATE TABLE IF NOT EXISTS wp_kpi_tag (
     tag              TEXT PRIMARY KEY,  -- YYYY-MM-DD
     kompressorH      REAL,   -- Kompressor-Laufzeit in Stunden
@@ -443,6 +485,10 @@ const NOTIFY_DEFAULTS: NotifySettings = {
   server: "https://ntfy.sh",
   topic: "",
   minIntervalMin: 15,
+  notifyLpc: true,
+  notifyLpp: true,
+  notifyRules: true,
+  notifyAnomalie: {},
 };
 
 export function loadNotifySettings(): NotifySettings {
@@ -451,15 +497,44 @@ export function loadNotifySettings(): NotifySettings {
   if (raw) {
     try { parsed = JSON.parse(raw); } catch { parsed = {}; }
   }
-  // Nur die aktuell definierten Felder übernehmen; früher gespeicherte, inzwischen
-  // entfernte Ereignis-Flags werden dabei ausgefiltert.
   const merged = { ...NOTIFY_DEFAULTS, ...parsed };
   return {
     enabled: !!merged.enabled,
     server: merged.server,
     topic: merged.topic,
     minIntervalMin: Number(merged.minIntervalMin) || NOTIFY_DEFAULTS.minIntervalMin,
+    // Neue thematische Schalter: fehlen sie (Altbestand), gilt "an" als Default,
+    // damit bisheriges Verhalten erhalten bleibt.
+    notifyLpc: merged.notifyLpc !== false,
+    notifyLpp: merged.notifyLpp !== false,
+    notifyRules: merged.notifyRules !== false,
+    notifyAnomalie: (merged.notifyAnomalie && typeof merged.notifyAnomalie === "object") ? merged.notifyAnomalie : {},
   };
+}
+
+// --- Mehrere ntfy-Kanäle + Auslöser-Zuordnung (Routing) ---
+export interface NtfyChannel { id: string; name: string; server: string; topic: string; priority?: number; enabled: boolean; }
+// Routing: Auslöser-ID -> Liste von Kanal-IDs.
+export type NotifyRouting = Record<string, string[]>;
+
+export function loadNtfyChannels(): NtfyChannel[] {
+  const raw = getSetting("ntfyChannels");
+  if (raw) { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch { /* ignore */ } }
+  // Migration: alten Einzelkanal als ersten Kanal übernehmen.
+  const alt = loadNotifySettings();
+  if (alt.topic) return [{ id: "ch_default", name: "Standard", server: alt.server, topic: alt.topic, priority: 3, enabled: alt.enabled }];
+  return [];
+}
+export function saveNtfyChannels(channels: NtfyChannel[]): void {
+  setSettingRaw("ntfyChannels", JSON.stringify(channels));
+}
+export function loadNotifyRouting(): NotifyRouting {
+  const raw = getSetting("notifyRouting");
+  if (raw) { try { const p = JSON.parse(raw); if (p && typeof p === "object") return p; } catch { /* ignore */ } }
+  return {};
+}
+export function saveNotifyRouting(routing: NotifyRouting): void {
+  setSettingRaw("notifyRouting", JSON.stringify(routing));
 }
 
 export function saveNotifySettings(s: Partial<NotifySettings>): void {
@@ -762,7 +837,7 @@ export interface OldDbImportResult { imported: boolean; tables: Array<{ table: s
 let oldDbImportResult: OldDbImportResult = { imported: false, tables: [] };
 export function getOldDbImportResult(): OldDbImportResult { return oldDbImportResult; }
 
-(function migrateFromOldDb() {
+function migrateFromOldDb() {
   const oldPath = path.join(__dirname, "..", "hems_old.db");
   if (!fs.existsSync(oldPath)) return;
 
@@ -774,6 +849,15 @@ export function getOldDbImportResult(): OldDbImportResult { return oldDbImportRe
     "consumer_viertelstunden", "sharing_viertelstunden", "wasser_viertelstunden",
     "wasser_zaehler", "warmwasser_data", "wp_data", "wp_power", "wp_kpi_tag", "drosselungen", "spotpreise",
     "pv_prognose", "logs", "rule_log",
+    // Anomalie-Erkennung (Verlauf + Feedback) und EEBUS-Protokolle: müssen bei der
+    // Versionsübernahme mitkommen, sonst ist die Anomalie-Liste nach dem Update leer.
+    "anomalie_log", "anomalie_feedback", "eebus_logs",
+    // Generische Geräte-Datenreihen (Luftsensor, Lüftung, 3D-Drucker, ...).
+    "device_data", "device_power",
+    // Zugangskontrolle-Protokoll.
+    "access_log",
+    // CO₂-Bilanz (Netzintensität × Netzbezug je Viertelstunde).
+    "co2_log",
   ];
   const tableCols = (attach: string, table: string): string[] => {
     try {
@@ -824,7 +908,10 @@ export function getOldDbImportResult(): OldDbImportResult { return oldDbImportRe
       fs.renameSync(oldPath, path.join(__dirname, "..", `hems_old.imported.${stamp}.db`));
     } catch { /* ignore */ }
   }
-})();
+}
+// Migration wird ans Ende der DB-Initialisierung verschoben (nach ALLEN
+// CREATE-TABLE-Statements), damit auch spät angelegte Tabellen (Anomalie,
+// EEBUS-Logs) als Ziel existieren und übernommen werden. Aufruf: siehe unten.
 
 export function addRuleLog(ruleId: string, ruleName: string, event: string, result: string): void {
   db.prepare("INSERT INTO rule_log (ts, ruleId, ruleName, event, result) VALUES (?, ?, ?, ?, ?)").run(
@@ -1125,6 +1212,143 @@ export function loadEebusLog(kind: "lpp" | "eebus", limit: number): unknown[] {
 const clearEebusLogStmt = db.prepare("DELETE FROM eebus_logs WHERE kind = ?");
 export function clearEebusLogPersisted(kind: "lpp" | "eebus"): void {
   try { clearEebusLogStmt.run(kind); } catch { /* ignore */ }
+}
+
+// --- Anomalie-Historie (beendete Anomalien) als Ringpuffer ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS anomalie_log (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts   TEXT NOT NULL,   -- beendetAm (ISO)
+    data TEXT NOT NULL    -- kompletter Anomalie-Eintrag als JSON
+  );
+`);
+const ANOMALIE_LOG_MAX = 500;
+const insertAnomalieStmt = db.prepare("INSERT INTO anomalie_log (ts, data) VALUES (?, ?)");
+const trimAnomalieStmt = db.prepare(
+  "DELETE FROM anomalie_log WHERE id NOT IN (SELECT id FROM anomalie_log ORDER BY id DESC LIMIT ?)"
+);
+const loadAnomalieStmt = db.prepare("SELECT data FROM anomalie_log ORDER BY id DESC LIMIT ?");
+export function persistAnomalie(a: unknown): void {
+  try {
+    const ts = (a as { beendetAm?: string }).beendetAm ?? new Date().toISOString();
+    insertAnomalieStmt.run(ts, JSON.stringify(a));
+    trimAnomalieStmt.run(ANOMALIE_LOG_MAX);
+  } catch { /* best-effort */ }
+}
+export function loadAnomalieHistorie(limit: number): any[] {
+  try {
+    const rows = loadAnomalieStmt.all(Math.min(limit, ANOMALIE_LOG_MAX)) as unknown as Array<{ data: string }>;
+    return rows.map((r) => { try { return JSON.parse(r.data); } catch { return null; } }).filter((x) => x != null);
+  } catch { return []; }
+}
+
+// --- Anomalie-Feedback (Bewertungen, Stufe 3) ---
+// Getrennte Tabelle, weil das Feedback gezielt für die Vorschläge (Stufe 4)
+// ausgewertet wird und eine andere Semantik als das Verlaufsprotokoll hat.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS anomalie_feedback (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    anom_id  TEXT NOT NULL,   -- ID der bewerteten Anomalie
+    ts       TEXT NOT NULL,   -- feedbackAm (ISO)
+    feedback TEXT NOT NULL,   -- richtig | unwichtig | fehlalarm
+    data     TEXT NOT NULL    -- kompletter Anomalie-Eintrag als JSON (mit Kontext)
+  );
+  CREATE INDEX IF NOT EXISTS idx_anom_fb_anom ON anomalie_feedback(anom_id);
+`);
+
+// JETZT sind alle Tabellen angelegt – Übernahme aus hems_old.db durchführen.
+// (Muss nach ALLEN CREATE-TABLE-Statements stehen, damit jede Ziel-Tabelle
+// existiert und die Daten – auch Anomalie/EEBUS-Logs – übernommen werden.)
+migrateFromOldDb();
+
+// Einmalige Migration der Wärmepumpen-Datenreihen in die verallgemeinerte
+// device_data/device_power-Struktur. Idempotent: läuft nur, solange noch
+// wp_data/wp_power-Zeilen existieren und eine WP-Quelle bekannt ist.
+(function migrateWpToDevice() {
+  try {
+    const hatWp = (db.prepare("SELECT COUNT(*) AS c FROM wp_data").get() as any)?.c ?? 0;
+    const hatWpPower = (db.prepare("SELECT COUNT(*) AS c FROM wp_power").get() as any)?.c ?? 0;
+    if (hatWp === 0 && hatWpPower === 0) return;
+    const wpSrc = loadSources().find((s) => s.deviceType === "heatpump");
+    if (!wpSrc) return; // ohne bekannte Quelle nicht migrieren (später erneut)
+    const wpId = wpSrc.id;
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        `INSERT INTO device_data (source_id, ts, label, value)
+         SELECT ?, ts, label, value FROM wp_data
+         WHERE NOT EXISTS (
+           SELECT 1 FROM device_data d WHERE d.source_id = ? AND d.ts = wp_data.ts AND d.label = wp_data.label
+         )`
+      ).run(wpId, wpId);
+      db.prepare(
+        `INSERT INTO device_power (source_id, ts, value)
+         SELECT ?, ts, value FROM wp_power
+         WHERE NOT EXISTS (
+           SELECT 1 FROM device_power p WHERE p.source_id = ? AND p.ts = wp_power.ts
+         )`
+      ).run(wpId, wpId);
+      db.exec("DELETE FROM wp_data");
+      db.exec("DELETE FROM wp_power");
+      db.exec("COMMIT");
+      addLog(LOG_LEVELS.info, "migration", `Waermepumpen-Daten in device_data/device_power migriert (Quelle ${wpId})`);
+    } catch (e: any) {
+      try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+      addLog(LOG_LEVELS.warn, "migration", `WP->device-Migration fehlgeschlagen: ${e?.message ?? e}`);
+    }
+  } catch { /* Tabellen evtl. noch nicht da */ }
+})();
+
+const ANOMALIE_FB_MAX = 1000;
+const insertAnomFbStmt = db.prepare("INSERT INTO anomalie_feedback (anom_id, ts, feedback, data) VALUES (?, ?, ?, ?)");
+const trimAnomFbStmt = db.prepare("DELETE FROM anomalie_feedback WHERE id NOT IN (SELECT id FROM anomalie_feedback ORDER BY id DESC LIMIT ?)");
+const loadAnomFbStmt = db.prepare("SELECT data FROM anomalie_feedback ORDER BY id DESC LIMIT ?");
+const existsAnomFbStmt = db.prepare("SELECT id FROM anomalie_feedback WHERE anom_id = ? LIMIT 1");
+const updateAnomFbStmt = db.prepare("UPDATE anomalie_feedback SET feedback = ?, ts = ?, data = ? WHERE anom_id = ?");
+
+export function persistAnomalieFeedback(a: any): void {
+  try {
+    const anomId = String(a?.id ?? "");
+    const fb = String(a?.feedback ?? "");
+    const ts = String(a?.feedbackAm ?? new Date().toISOString());
+    if (!anomId || !fb) return;
+    // Falls schon ein Feedback zu dieser Anomalie existiert -> aktualisieren.
+    const vorhanden = existsAnomFbStmt.get(anomId);
+    if (vorhanden) {
+      updateAnomFbStmt.run(fb, ts, JSON.stringify(a), anomId);
+    } else {
+      insertAnomFbStmt.run(anomId, ts, fb, JSON.stringify(a));
+      trimAnomFbStmt.run(ANOMALIE_FB_MAX);
+    }
+  } catch { /* best-effort */ }
+}
+export function loadAnomalieFeedback(limit: number): any[] {
+  try {
+    const rows = loadAnomFbStmt.all(Math.min(limit, ANOMALIE_FB_MAX)) as unknown as Array<{ data: string }>;
+    return rows.map((r) => { try { return JSON.parse(r.data); } catch { return null; } }).filter((x) => x != null);
+  } catch { return []; }
+}
+// Feedback auf eine bereits BEENDETE Anomalie (in anomalie_log) setzen. Aktualisiert
+// den Historie-Eintrag UND schreibt ins Feedback-Protokoll. Gibt true, wenn der
+// Eintrag gefunden wurde.
+const findAnomLogStmt = db.prepare("SELECT id, data FROM anomalie_log ORDER BY id DESC LIMIT 500");
+const updateAnomLogStmt = db.prepare("UPDATE anomalie_log SET data = ? WHERE id = ?");
+export function updateAnomalieFeedback(anomId: string, feedback: string, ts: string): boolean {
+  try {
+    const rows = findAnomLogStmt.all() as unknown as Array<{ id: number; data: string }>;
+    for (const r of rows) {
+      let obj: any;
+      try { obj = JSON.parse(r.data); } catch { continue; }
+      if (obj?.id === anomId) {
+        obj.feedback = feedback;
+        obj.feedbackAm = ts;
+        updateAnomLogStmt.run(JSON.stringify(obj), r.id);
+        persistAnomalieFeedback(obj);
+        return true;
+      }
+    }
+    return false;
+  } catch { return false; }
 }
 
 // Schreibt eine Logmeldung, sofern ihr Level >= Mindest-Speicher-Level ist.
@@ -1794,124 +2018,204 @@ export function getPvTagesSummen(
   return pvDayPerSourceStmt.all(vonTs, bisTs) as unknown as Array<{ source: string; tag: string; kwh: number }>;
 }
 
-// --- Wärmepumpen-Zeitreihen (alle Datenreihen der WP-Quelle) ---
-const insertWpDataStmt = db.prepare(
-  `INSERT INTO wp_data (ts, label, value) VALUES (?, ?, ?)
-   ON CONFLICT(ts, label) DO UPDATE SET value = excluded.value`
-);
-// Alle numerischen Datenreihen eines Zeitpunkts (label->value) speichern.
-//
-// Änderungserkennung: Ein Zeitpunkt wird nur geschrieben, wenn sich mindestens
-// ein Label gegenüber dem zuletzt geschriebenen Zustand geändert hat – ODER
-// wenn seit dem letzten Schreiben mindestens WP_HEARTBEAT_MS vergangen sind
-// (Stützpunkt). Wird geschrieben, dann IMMER der vollständige Zustand, damit
-// jeder gespeicherte Zeitpunkt in sich vollständig ist (die KPI-Integration
-// gruppiert je Zeitpunkt und erwartet dort alle Labels).
-//
-// Der Heartbeat-Abstand entspricht dem Integrations-Deckel (max. 300 s pro
-// Intervall in wpkpi.ts), damit die Energieberechnung exakt bleibt: Bei konstant
-// laufender WP entstehen so nie Lücken > 5 min, die zu einer Unterschätzung
-// führen würden.
+// --- Heartbeat-Konstante für die intelligente Persistierung ---
+// Ein unveränderter Zustand wird spätestens nach WP_HEARTBEAT_MS erneut als
+// Stützpunkt geschrieben. Der Abstand entspricht dem Integrations-Deckel der
+// KPI-Berechnung (max. 300 s), damit die Energieintegration exakt bleibt.
 const WP_HEARTBEAT_MS = 5 * 60 * 1000;
-let lastWpWritten: Record<string, number> | null = null;
-let lastWpWriteMs = 0;
 
-// Prüft, ob sich series gegenüber dem zuletzt geschriebenen Zustand unterscheidet
-// (exakter Vergleich, inkl. neu hinzugekommener oder weggefallener Labels).
-function wpSeriesUnveraendert(series: Record<string, number>): boolean {
-  const prev = lastWpWritten;
-  if (!prev) return false;
-  const keysNeu = Object.keys(series);
-  const keysAlt = Object.keys(prev);
-  if (keysNeu.length !== keysAlt.length) return false;
-  for (const k of keysNeu) {
-    if (!(k in prev)) return false;
-    if (prev[k] !== series[k]) return false;
+// --- Generische Geräte-Datenreihen (device_data) ---
+const insertDeviceDataStmt = db.prepare(
+  "INSERT INTO device_data (source_id, ts, label, value) VALUES (?, ?, ?, ?) " +
+  "ON CONFLICT(source_id, ts, label) DO UPDATE SET value = excluded.value"
+);
+export function saveDeviceData(sourceId: string, ts: string, series: Record<string, number>): void {
+  const rows: Array<[string, string, string, number]> = [];
+  for (const [label, value] of Object.entries(series)) {
+    if (Number.isFinite(value)) rows.push([sourceId, ts, label, value]);
   }
-  return true;
+  if (!rows.length) return;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) insertDeviceDataStmt.run(...r);
+    db.exec("COMMIT");
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+    throw e;
+  }
+}
+export function getDeviceData(sourceId: string, vonTs: string, bisTs: string, label?: string): Array<{ ts: string; label: string; value: number }> {
+  if (label != null) {
+    return db.prepare(
+      "SELECT ts, label, value FROM device_data WHERE source_id = ? AND label = ? AND ts >= ? AND ts <= ? ORDER BY ts"
+    ).all(sourceId, label, vonTs, bisTs) as unknown as Array<{ ts: string; label: string; value: number }>;
+  }
+  return db.prepare(
+    "SELECT ts, label, value FROM device_data WHERE source_id = ? AND ts >= ? AND ts <= ? ORDER BY ts"
+  ).all(sourceId, vonTs, bisTs) as unknown as Array<{ ts: string; label: string; value: number }>;
+}
+export function getDeviceDataLabels(sourceId: string): string[] {
+  return (db.prepare("SELECT DISTINCT label FROM device_data WHERE source_id = ? ORDER BY label")
+    .all(sourceId) as unknown as Array<{ label: string }>).map((r) => r.label);
+}
+
+// --- Zugangskontrolle: Protokoll ---
+const ACCESS_LOG_MAX = 2000;
+const insertAccessStmt = db.prepare(
+  "INSERT INTO access_log (source_id, ts, art, wert, bits, ergebnis, name) VALUES (?, ?, ?, ?, ?, ?, ?)"
+);
+export function addAccessLog(e: { sourceId: string; ts: string; art: string; wert: string; bits?: number; ergebnis?: string; name?: string }): void {
+  insertAccessStmt.run(e.sourceId, e.ts, e.art, e.wert, e.bits ?? null, e.ergebnis ?? null, e.name ?? null);
+  // Ringpuffer: alte Einträge kappen.
+  db.prepare(
+    "DELETE FROM access_log WHERE id NOT IN (SELECT id FROM access_log ORDER BY id DESC LIMIT ?)"
+  ).run(ACCESS_LOG_MAX);
+}
+export function getAccessLog(limit = 200): Array<{ id: number; source_id: string; ts: string; art: string; wert: string; bits: number | null; ergebnis: string | null; name: string | null }> {
+  return db.prepare("SELECT * FROM access_log ORDER BY id DESC LIMIT ?").all(Math.min(1000, limit)) as any;
+}
+
+// --- CO₂-Bilanz ---
+const upsertCo2Stmt = db.prepare(
+  "INSERT INTO co2_log (ts, intensitaet, netzbezugKwh, emissionenG) VALUES (?, ?, ?, ?) ON CONFLICT(ts) DO UPDATE SET intensitaet=excluded.intensitaet, netzbezugKwh=excluded.netzbezugKwh, emissionenG=excluded.emissionenG"
+);
+export function saveCo2(ts: string, intensitaet: number, netzbezugKwh: number): void {
+  upsertCo2Stmt.run(ts, intensitaet, netzbezugKwh, intensitaet * netzbezugKwh);
+}
+// CO₂-Summen für einen Zeitraum (ISO-Präfix, z. B. "2026" oder "2026-09").
+// Übersicht über die vorliegenden CO₂-Daten: ältester/neuester Zeitpunkt + Anzahl.
+export function getCo2Uebersicht(): { von: string | null; bis: string | null; punkte: number; tage: number } {
+  const r = db.prepare("SELECT MIN(ts) v, MAX(ts) b, COUNT(*) c, COUNT(DISTINCT substr(ts,1,10)) t FROM co2_log").get() as any;
+  return { von: r?.v ?? null, bis: r?.b ?? null, punkte: Number(r?.c ?? 0), tage: Number(r?.t ?? 0) };
+}
+export function getCo2Summe(prefix: string): { emissionenG: number; netzbezugKwh: number; schnittIntensitaet: number; punkte: number } {
+  const r = db.prepare(
+    "SELECT COALESCE(SUM(emissionenG),0) e, COALESCE(SUM(netzbezugKwh),0) n, COUNT(*) c FROM co2_log WHERE ts LIKE ?"
+  ).get(`${prefix}%`) as any;
+  const e = Number(r?.e ?? 0), n = Number(r?.n ?? 0), c = Number(r?.c ?? 0);
+  return { emissionenG: e, netzbezugKwh: n, schnittIntensitaet: n > 0 ? e / n : 0, punkte: c };
+}
+// Aktualisiert Ergebnis + Name des jüngsten Log-Eintrags einer Quelle (nach der
+// Whitelist-Prüfung). So erscheint im Protokoll, ob berechtigt und wer.
+export function updateLetztesAccessResult(sourceId: string, ergebnis: string, name: string | null): void {
+  const row = db.prepare("SELECT id FROM access_log WHERE source_id = ? ORDER BY id DESC LIMIT 1").get(sourceId) as any;
+  if (row?.id != null) db.prepare("UPDATE access_log SET ergebnis = ?, name = ? WHERE id = ?").run(ergebnis, name, row.id);
+}
+
+// Zugangs-Berechtigungen (Whitelist) als JSON in settings.
+export function loadAccessEntries(): any[] {
+  const raw = getSetting("accessEntries");
+  if (!raw) return [];
+  try { const j = JSON.parse(raw); return Array.isArray(j) ? j : []; } catch { return []; }
+}
+export function saveAccessEntries(entries: any[]): void {
+  setSetting("accessEntries", JSON.stringify(entries));
 }
 
 // Label der elektrischen Leistungsaufnahme (wird separat gespeichert).
 const L_ELEKTRISCH = "_ElektrischW";
 
-// Eigene, dichte Leistungsreihe (wp_power) mit eigener Änderungserkennung.
-const insertWpPowerStmt = db.prepare(
-  `INSERT INTO wp_power (ts, value) VALUES (?, ?)
-   ON CONFLICT(ts) DO UPDATE SET value = excluded.value`
+// Verallgemeinerte, intelligente Persistierung je Gerät (aus der WP-Logik).
+// - Die elektrische Leistung (_ElektrischW) wird entkoppelt in device_power
+//   geschrieben (eigene Änderungserkennung + Heartbeat, auf ganze Watt gerundet).
+// - Die übrigen Datenpunkte gehen in device_data, ebenfalls mit Änderungserkennung
+//   + Heartbeat, damit unveränderte Zustände die Reihe nicht unnötig füllen.
+const insertDevicePowerStmt = db.prepare(
+  `INSERT INTO device_power (source_id, ts, value) VALUES (?, ?, ?)
+   ON CONFLICT(source_id, ts) DO UPDATE SET value = excluded.value`
 );
-let lastWpPower: number | null = null;
-let lastWpPowerMs = 0;
+const lastDevicePower = new Map<string, { v: number; ms: number }>();
+const lastDeviceWritten = new Map<string, Record<string, number>>();
+const lastDeviceWriteMs = new Map<string, number>();
 
-export function saveWpData(ts: string, series: Record<string, number>): void {
+function deviceSeriesUnveraendert(sourceId: string, zustand: Record<string, number>): boolean {
+  const prev = lastDeviceWritten.get(sourceId);
+  if (!prev) return false;
+  const keys = Object.keys(zustand);
+  if (keys.length !== Object.keys(prev).length) return false;
+  for (const k of keys) if (prev[k] !== zustand[k]) return false;
+  return true;
+}
+
+export function saveDeviceDataSmart(sourceId: string, ts: string, series: Record<string, number>): void {
   const jetztMs = Date.now();
-
-  // 1) Elektrische Leistung entkoppeln: eigene dichte Reihe. Der Wert schwankt
-  //    (Shelly-Messung) fast bei jedem Poll, würde also die Zustands-Erkennung
-  //    unwirksam machen. Deshalb getrennt speichern, auf ganze Watt gerundet
-  //    (glättet das Nachkomma-Rauschen), mit eigener Änderungserkennung +
-  //    Heartbeat.
+  // 1) Elektrische Leistung entkoppeln (device_power).
   if (L_ELEKTRISCH in series) {
     const pW = Math.round(series[L_ELEKTRISCH]);
-    const unveraendert = lastWpPower !== null && lastWpPower === pW;
-    if (!unveraendert || (jetztMs - lastWpPowerMs) >= WP_HEARTBEAT_MS) {
-      insertWpPowerStmt.run(ts, pW);
-      lastWpPower = pW;
-      lastWpPowerMs = jetztMs;
+    const prev = lastDevicePower.get(sourceId);
+    const unveraendert = prev != null && prev.v === pW;
+    if (!unveraendert || (jetztMs - (prev?.ms ?? 0)) >= WP_HEARTBEAT_MS) {
+      insertDevicePowerStmt.run(sourceId, ts, pW);
+      lastDevicePower.set(sourceId, { v: pW, ms: jetztMs });
     }
   }
-
-  // 2) Restliche Zustandsdaten (Modus, Kompressor, Heizleistung, Temperaturen …)
-  //    OHNE die Leistung. Zeitpunkt-Änderungserkennung greift jetzt zuverlässig,
-  //    weil der zappelige Leistungswert die Reihe nicht mehr blockiert.
+  // 2) Restliche Zustandsdaten (ohne Leistung) in device_data.
   const zustand: Record<string, number> = {};
   for (const [k, v] of Object.entries(series)) if (k !== L_ELEKTRISCH) zustand[k] = v;
   if (Object.keys(zustand).length === 0) return;
-
-  if (wpSeriesUnveraendert(zustand) && (jetztMs - lastWpWriteMs) < WP_HEARTBEAT_MS) {
+  if (deviceSeriesUnveraendert(sourceId, zustand) && (jetztMs - (lastDeviceWriteMs.get(sourceId) ?? 0)) < WP_HEARTBEAT_MS) {
     return;
   }
   db.exec("BEGIN");
   try {
     for (const [label, value] of Object.entries(zustand)) {
-      insertWpDataStmt.run(ts, label, value);
+      if (Number.isFinite(value)) insertDeviceDataStmt.run(sourceId, ts, label, value);
     }
     db.exec("COMMIT");
-    lastWpWritten = { ...zustand };
-    lastWpWriteMs = jetztMs;
+    lastDeviceWritten.set(sourceId, { ...zustand });
+    lastDeviceWriteMs.set(sourceId, jetztMs);
   } catch (e) {
-    db.exec("ROLLBACK");
+    try { db.exec("ROLLBACK"); } catch { /* ignore */ }
     throw e;
   }
 }
 
-// Leistungsreihe (wp_power) für einen Zeitraum lesen.
-const wpPowerRangeStmt = db.prepare(
-  "SELECT ts, value FROM wp_power WHERE ts >= ? AND ts <= ? ORDER BY ts ASC"
-);
-export function getWpPower(vonTs: string, bisTs: string): Array<{ ts: string; value: number }> {
-  return wpPowerRangeStmt.all(vonTs, bisTs) as unknown as Array<{ ts: string; value: number }>;
+// WP-Speicherung: dünner Wrapper auf die verallgemeinerte Funktion, mit der
+// WP-Quellen-ID. Erhält die bisherige Aufrufsignatur (nur ts + series).
+export function saveWpData(ts: string, series: Record<string, number>): void {
+  const id = wpSourceId();
+  if (!id) return;
+  saveDeviceDataSmart(id, ts, series);
 }
 
-// Tagesdaten: je Datenreihe die Zeitpunkte + Werte in [vonTs, bisTs].
-const wpDataRangeStmt = db.prepare(
-  "SELECT ts, label, value FROM wp_data WHERE ts >= ? AND ts <= ? ORDER BY ts ASC"
-);
+// Die Quellen-ID der Wärmepumpe (deviceType heatpump). Gecacht, da sich Quellen
+// selten ändern; bei Bedarf neu ermittelt.
+let wpSourceIdCache: string | null | undefined;
+function wpSourceId(): string | null {
+  if (wpSourceIdCache === undefined) {
+    wpSourceIdCache = loadSources().find((s) => s.deviceType === "heatpump")?.id ?? null;
+  }
+  return wpSourceIdCache;
+}
+export function invalidateWpSourceId(): void { wpSourceIdCache = undefined; }
+
+// Leistungsreihe (jetzt device_power mit WP-source_id) für einen Zeitraum lesen.
+export function getWpPower(vonTs: string, bisTs: string): Array<{ ts: string; value: number }> {
+  const id = wpSourceId();
+  if (!id) return [];
+  return db.prepare(
+    "SELECT ts, value FROM device_power WHERE source_id = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC"
+  ).all(id, vonTs, bisTs) as unknown as Array<{ ts: string; value: number }>;
+}
+
+// Tagesdaten: je Datenreihe die Zeitpunkte + Werte in [vonTs, bisTs] (device_data).
 export function getWpData(
   vonTs: string,
   bisTs: string
 ): Array<{ ts: string; label: string; value: number }> {
-  return wpDataRangeStmt.all(vonTs, bisTs) as unknown as Array<{
-    ts: string;
-    label: string;
-    value: number;
-  }>;
+  const id = wpSourceId();
+  if (!id) return [];
+  return db.prepare(
+    "SELECT ts, label, value FROM device_data WHERE source_id = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC"
+  ).all(id, vonTs, bisTs) as unknown as Array<{ ts: string; label: string; value: number }>;
 }
 
-// Alle jemals gespeicherten Datenreihen-Labels (für die Auswahl-Liste), auch
-// wenn am gewählten Tag keine Daten vorliegen.
-const wpLabelsStmt = db.prepare("SELECT DISTINCT label FROM wp_data ORDER BY label ASC");
+// Alle jemals gespeicherten Datenreihen-Labels der WP (device_data).
 export function getWpLabels(): string[] {
-  return (wpLabelsStmt.all() as unknown as Array<{ label: string }>).map((r) => r.label);
+  const id = wpSourceId();
+  if (!id) return [];
+  return (db.prepare("SELECT DISTINCT label FROM device_data WHERE source_id = ? ORDER BY label ASC")
+    .all(id) as unknown as Array<{ label: string }>).map((r) => r.label);
 }
 
 // Chart-Voreinstellungen der Wärmepumpen-Seite (welche Reihen sichtbar sind und

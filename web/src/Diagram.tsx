@@ -106,6 +106,7 @@ export function Diagram({ state }: { state: FullState }) {
     <div
       ref={wrapRef}
       className="diagram-scaler"
+      onClick={() => { try { window.dispatchEvent(new Event("flux-close-folder")); } catch { /* ignore */ } }}
     >
       <div
         className="diagram-inner"

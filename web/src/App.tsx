@@ -12,12 +12,14 @@ import { VerbraucherPage } from "./VerbraucherPage";
 import { WaermepumpePage } from "./WaermepumpePage";
 import { WarmwasserPage } from "./WarmwasserPage";
 import { AcSpeicherPage } from "./AcSpeicherPage";
+import { KameraPage } from "./KameraPage";
 import { StatusPage } from "./StatusPage";
 import { SettingsPage } from "./SettingsPage";
 import { QuellenPage } from "./QuellenPage";
 import { PvAnlagenPage } from "./PvAnlagenPage";
 import { SenkenPage } from "./SenkenPage";
 import { EebusPage } from "./EebusPage";
+import { AnomaliePage } from "./AnomaliePage";
 import { LastprofilePage } from "./LastprofilePage";
 import { ErzeugerprofilePage } from "./ErzeugerprofilePage";
 import { DebugPage } from "./DebugPage";
@@ -33,6 +35,10 @@ import { EnergySharingPage } from "./EnergySharingPage";
 import { HilfeKonzeptPage, HilfeKonfigurationPage, HilfeAuswertungPage } from "./HilfePages";
 import { HilfeApiPage } from "./HilfeApiPage";
 import { BoersenstrompreisPage } from "./BoersenstrompreisPage";
+import { WetterPage } from "./WetterPage";
+import { ZugangskontrollePage } from "./ZugangskontrollePage";
+import { ElektroautoPage } from "./ElektroautoPage";
+import { RueckblickPage } from "./RueckblickPage";
 import "./app.css";
 
 export default function App() {
@@ -83,6 +89,9 @@ export default function App() {
         open={menuOpen}
         setOpen={setMenuOpen}
         hasMarstek={(state.sources ?? []).some((s) => (s.role === "acBattery" || s.role === "dcBattery") && s.enabled)}
+        hasSecuritySpy={(state.sources ?? []).some((s) => s.role === "securitySpy" && s.enabled)}
+        hasAccessReader={(state.sources ?? []).some((s) => s.role === "accessReader" && s.enabled)}
+        hasEvcc={(state.sources ?? []).some((s) => s.role === "evcc" && s.enabled)}
       />
 
       <main className="content">
@@ -91,12 +100,14 @@ export default function App() {
         {route === "waermepumpe" && <WaermepumpePage />}
         {route === "warmwasser" && <WarmwasserPage />}
         {route === "marstek" && <AcSpeicherPage />}
+        {route === "kameras" && <KameraPage />}
         {route === "status" && <StatusPage state={state} />}
         {route === "energiekosten" && <SettingsPage state={state} />}
         {route === "quellen" && <QuellenPage />}
         {route === "pvanlagen" && <PvAnlagenPage />}
         {route === "senken" && <SenkenPage />}
         {route === "eebus" && <EebusPage />}
+        {route === "anomalie" && <AnomaliePage />}
         {route === "lastprofile" && <LastprofilePage state={state} />}
         {route === "erzeugerprofile" && <ErzeugerprofilePage state={state} />}
         {route === "debug" && <DebugPage />}
@@ -109,6 +120,10 @@ export default function App() {
         {route === "stromverbrauch" && <StromverbrauchPage state={state} />}
         {route === "stromerzeugung" && <StromerzeugungPage />}
         {route === "boersenstrompreis" && <BoersenstrompreisPage state={state} />}
+        {route === "wetter" && <WetterPage />}
+        {route === "zugangskontrolle" && <ZugangskontrollePage state={state} />}
+        {route === "elektroauto" && <ElektroautoPage />}
+        {route === "rueckblick" && <RueckblickPage />}
         {route === "energysharing" && <EnergySharingPage state={state} />}
         {route === "hilfe-konzept" && <HilfeKonzeptPage />}
         {route === "hilfe-konfiguration" && <HilfeKonfigurationPage />}

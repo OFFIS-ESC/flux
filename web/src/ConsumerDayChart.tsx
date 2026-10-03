@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 OFFIS e.V. (http://www.offis.de). Teilweise KI-generiert (siehe NOTICE.md). Ohne Gewaehrleistung.
 
+import { ChartDownloadButton } from "./ChartDownloadButton";
 import { useEffect, useState } from "react";
 import { DateNav } from "./DateNav";
 import { MonthNav } from "./MonthNav";
@@ -84,6 +85,7 @@ function VerbrauchChart({
           <div className="chart-unit-switch">
             <button type="button" className={einheit === "kwh" ? "active" : ""} onClick={() => setEinheit("kwh")}>kWh</button>
             <button type="button" className={einheit === "w" ? "active" : ""} onClick={() => setEinheit("w")}>W</button>
+            <ChartDownloadButton dateiname="verbraucher-tagesverlauf" />
           </div>
         </div>
         <svg viewBox={`0 0 ${W} ${H}`} className="tv-svg" preserveAspectRatio="xMidYMid meet">

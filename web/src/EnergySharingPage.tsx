@@ -8,6 +8,7 @@ import { DateNav } from "./DateNav";
 import type { FullState, Abnehmer } from "./types";
 import { ChartHoverLayer } from "./ChartHoverLayer";
 import { niceScale, convertEnergie, einheitLabel, fmtTick, type EnergieEinheit, nf } from "./chartUtils";
+import { ChartDownloadButton } from "./ChartDownloadButton";
 
 function isoToday(): string {
   const d = new Date();
@@ -370,7 +371,7 @@ export function EnergySharingPage({ state }: { state: FullState }) {
       {/* Verbrauchsverlauf + §42c-Überschuss in einem Block */}
       <section className="card">
         <div className="block-head">
-          <h3>Verbrauchsverlauf &amp; Energy-Sharing-Anteil</h3>
+          <div className="chart-kopf"><h3>Verbrauchsverlauf & Energy-Sharing-Anteil</h3><ChartDownloadButton dateiname="energy-sharing-verlauf" /></div>
           <DateNav value={date} onChange={setDate} label="Tag" />
         </div>
         <div className="block-stack">

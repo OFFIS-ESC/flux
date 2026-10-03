@@ -145,6 +145,8 @@ fi
 
 # --- 3) Bauen: Frontend zuerst, dann Backend ---
 echo "==> Installiere & baue Frontend (web) ..."
+echo "    (Der erste Durchlauf laedt alle Pakete neu und kann einige Minuten"
+echo "     dauern. Der Fortschrittsbalken von npm zeigt, dass es laeuft.)"
 ( cd "$SCRIPT_DIR/web" && npm install && npm run build )
 
 echo "==> Installiere & baue Backend (server) ..."

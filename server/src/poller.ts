@@ -17,6 +17,12 @@ import type {
 import type { SourceConfig } from "./sources.js";
 import { is42cRole } from "./sources.js";
 import { readSource } from "./fetcher.js";
+import { getSwitchState, resolveSwitchChannel } from "./switch.js";
+
+// Cache des zuletzt ermittelten Schaltzustands je schaltbarer Quelle. Wird im
+// Poll-Zyklus gefüllt (Cache-Hit auf die ohnehin gepollte URL) und synchron im
+// getState() gelesen, damit die Statusseite den An/Aus-Zustand anzeigen kann.
+const switchStateCache: Record<string, boolean | null> = {};
 import { parseMarstekTarget } from "./marstek.js";
 import { reconcileMqtt, reconcilePublishers, publisherKey } from "./mqttClient.js";
 import { publishExtHems, type ExtHemsInputs } from "./extHems.js";
@@ -29,6 +35,9 @@ import { log } from "./logger.js";
 import { persistWpKpiForDay } from "./wpkpi.js";
 import { evaluateRules, setPersistDisabled, type RuleMetrics } from "./rules.js";
 import * as db from "./db.js";
+import * as anomalyModule from "./anomaly.js";
+import { sendNtfy } from "./notify.js";
+import { getAllHueSubDevices } from "./hue.js";
 
 // =====================================================================
 // Datengetriebener Poller
@@ -41,6 +50,9 @@ import * as db from "./db.js";
 // =====================================================================
 
 // --- State ---
+// Startzeitpunkt von FLUX (für die Neustart-Schonfrist der Anomalie-Erkennung).
+const FLUX_START_MS = Date.now();
+
 const live: LiveData = {
   gridPower: 0,
   gridInTotal: 0,
@@ -120,6 +132,9 @@ const sourceStatus: Record<
     // (Host/Netz nicht erreichbar) fehlschlägt. null = aktuell erreichbar bzw.
     // Fehler anderer Art. Basis für die Regel "Quelle seit X nicht erreichbar".
     unreachableSince?: number | null;
+    // true, wenn die Quelle über einen verlinkten schaltbaren Messer AUS ist –
+    // dann ist ein fehlgeschlagener Abruf normal (kein Fehler, kein roter Punkt).
+    ausgeschaltet?: boolean;
   }
 > = {};
 function ensureStatus(id: string) {
@@ -133,6 +148,7 @@ function recordSuccess(id: string) {
   s.lastError = null;
   s.offlineLogged = false;
   s.unreachableSince = null;
+  s.ausgeschaltet = false;
   // Wiedererreichbar nach gemeldetem Ausfall: einmalige Entwarnung (debug).
   if (warOffline) {
     db.addLog(db.LOG_LEVELS.debug, "poll", `${id}: wieder erreichbar.`);
@@ -747,7 +763,8 @@ function aggregate(): void {
     // in der Bilanz/Verbraucherliste geführt (sonst Doppelzählung der Leistung).
     if (src.subordinateOf) continue;
     const istVerbraucherOderSpeicher =
-      src.role === "consumer" || src.role === "batteryIn" || src.role === "batteryOut" || src.role === "acBattery" || src.role === "dcBattery";
+      src.role === "consumer" || src.role === "batteryIn" || src.role === "batteryOut" || src.role === "acBattery" || src.role === "dcBattery"
+      || src.role === "evcc" || src.role === "prusa" || src.role === "vallox" || src.role === "mitsubishiAc";
     // Deaktivierte Quellen normalerweise überspringen – ABER Verbraucher und
     // Speicher sollen dennoch in der Verbraucherliste auftauchen (mit 0 W und dem
     // heutigen Tagesverbrauch aus der DB), damit die Liste vollständig ist und
@@ -787,6 +804,22 @@ function aggregate(): void {
           room: src.room,
           power: 0,
           bidirectional: src.role === "batteryOut" ? true : undefined,
+          energyDay: consumerDaySumsToday()[src.id] ?? 0,
+          url: src.url,
+          extraLinks: src.extraLinks,
+        });
+      } else if ((src.role === "prusa" || src.role === "vallox" || src.role === "mitsubishiAc") && src.powerSourceId) {
+        // Geräte-Rollen mit verlinkter Leistungsquelle auch ohne eigenen Abruf
+        // zeigen (Leistung kommt aus der verlinkten Quelle).
+        const linkedCfg = sources.find((s) => s.id === src.powerSourceId);
+        consumers.push({
+          id: src.id,
+          label: src.label,
+          deviceType: src.deviceType ?? "generic",
+          role: src.role,
+          icon: src.icon,
+          room: src.room ?? linkedCfg?.room,
+          power: Math.max(0, powerOf(src.id)),
           energyDay: consumerDaySumsToday()[src.id] ?? 0,
           url: src.url,
           extraLinks: src.extraLinks,
@@ -1021,6 +1054,56 @@ function aggregate(): void {
         });
         break;
       }
+      case "evcc": {
+        // Elektroauto (evcc): liefert die Ladeleistung selbst. Wie ein normaler
+        // Verbraucher behandeln – erscheint in der Verbraucherliste UND zählt in
+        // den Hausverbrauch (dazu unten evccPower zur Verbrauchsbilanz addiert).
+        const heuteVsEv = consumerDaySumsToday();
+        const connected = (v.connected ?? 0) > 0.5;
+        consumers.push({
+          id: src.id,
+          label: src.label,
+          deviceType: src.deviceType ?? "car",
+          role: src.role,
+          icon: src.icon,
+          room: src.room,
+          power: Math.max(0, power),
+          energyDay: (heuteVsEv[src.id] ?? 0) + (consumerVsAccum[src.id] ?? 0),
+          context: { label: "verbunden", value: connected, unit: "" },
+          url: src.url,
+          extraLinks: src.extraLinks,
+        });
+        break;
+      }
+      case "prusa":
+      case "vallox":
+      case "mitsubishiAc": {
+        // Diese Geräte-Rollen erscheinen in der Verbraucherliste, WENN sie eine
+        // verlinkte Leistungsquelle (powerSourceId) haben – dann steuern sie einen
+        // echten Energieverbrauch bei. Ohne Verlinkung tauchen sie hier nicht auf
+        // (sie haben ihre eigene Darstellung auf der Statusseite).
+        if (!src.powerSourceId) break;
+        const linkedCfg = sources.find((s) => s.id === src.powerSourceId);
+        const heuteVsG = consumerDaySumsToday();
+        // Tagesenergie wird unter der Geräte-ID gebucht (das Gerät steht jetzt in
+        // der Verbraucherliste; accumulateConsumers bucht die verlinkte Leistung
+        // unter dieser ID). Keine zusätzliche Addition der verlinkten Quelle,
+        // sonst Doppelzählung.
+        const energyDayG = (heuteVsG[src.id] ?? 0) + (consumerVsAccum[src.id] ?? 0);
+        consumers.push({
+          id: src.id,
+          label: src.label,
+          deviceType: src.deviceType ?? "generic",
+          role: src.role,
+          icon: src.icon,
+          room: src.room ?? linkedCfg?.room,
+          power: Math.max(0, power),
+          energyDay: energyDayG,
+          url: src.url,
+          extraLinks: src.extraLinks,
+        });
+        break;
+      }
       case "consumer": {
         // Echte Leistung = eigene power + Summe der Korrektur-Terme.
         // (Virtueller Verbraucher, z.B. Klima = Shelly + Balkon-PV.)
@@ -1199,14 +1282,35 @@ function aggregate(): void {
     if (s.role !== "dcBattery" || !sourceEnabled(s)) continue;
     dcCount++;
     const soc = socValue(s.dcLinkedBatteryOut) ?? socValue(s.dcLinkedPv);
-    // DC-Speicher: Netto-Leistung = Ladung (PV + AC-Lader) − Entladung
-    // (batteryOut). Ergebnis in gleicher Konvention: >0 laden, <0 entladen.
+    // DC-Speicher: Netto-Leistung in der Konvention >0 laden, <0 entladen.
+    //   Laden  = PV-Zufluss (dcLinkedPv) + AC-Ladung (dcLinkedCharger)
+    //   Entladen = batteryOut (dcLinkedBatteryOut)
+    // Für die Entladung sind ZWEI batteryOut-Vorzeichenkonventionen möglich (vgl.
+    // die Behandlung im batteryOut-Poller):
+    //   (1) rein einspeisender Shelly: power IMMER positiv = Entladung
+    //   (2) bidirektionaler Shelly (z. B. Shelly 1PM Mini): power<0 = Entladung,
+    //       power>0 = Standby-Eigenverbrauch (kein Entladen)
+    // Bei (1) muss die positive Entladeleistung abgezogen werden (− outW), bei (2)
+    // ist die Entladung bereits negativ kodiert und darf NICHT noch einmal
+    // invertiert werden – sonst kehrt sich das Vorzeichen fälschlich um.
     const pvW = rawPower(s.dcLinkedPv);
     const chW = rawPower(s.dcLinkedCharger);
-    const outW = rawPower(s.dcLinkedBatteryOut); // batteryOut: positiv = Einspeisung/Entladung
+    const outW = rawPower(s.dcLinkedBatteryOut);
+    // Erkennung der bidirektionalen Variante über das energyReturnTotal-Feld der
+    // verknüpften batteryOut-Quelle (identisches Kriterium wie im Poller).
+    const outSrc = s.dcLinkedBatteryOut ? sources.find((x) => x.id === s.dcLinkedBatteryOut) : undefined;
+    const outBidirektional = !!outSrc && (outSrc.fields ?? []).some((f) => f.metric === "energyReturnTotal");
     let power: number | null = null;
     if (pvW != null || chW != null || outW != null) {
-      power = (pvW ?? 0) + (chW ?? 0) - (outW ?? 0);
+      // Entlade-Beitrag als NEGATIVER Wert (Konvention <0 = entladen):
+      //  bidirektional: outW ist bereits vorzeichenbehaftet (Entladung negativ) und
+      //    enthält bei power>0 nur Standby-Eigenverbrauch → nur negativen Anteil
+      //    (die Entladung) übernehmen, Standby ignorieren.
+      //  rein einspeisend: outW ist positiv = Entladung → als −outW einrechnen.
+      const entladeBeitrag = outBidirektional
+        ? Math.min(0, outW ?? 0)     // nur echte Entladung (negativ), Standby (>0) ignorieren
+        : -(outW ?? 0);              // positive Entladung invertieren
+      power = (pvW ?? 0) + (chW ?? 0) + entladeBeitrag;
     }
     batterySocs.push({ label: `DC${dcCount}`, soc, power });
   }
@@ -2360,7 +2464,17 @@ export function computeCurrentViertelstunde(): {
   }
   const pvDelta = pvCounterPeek + pvIntPeek;
   const pvDcDelta = pvDcCounterPeek + pvDcIntPeek;
-  const battDelta0 = sumPerSourceVsDiffPeek((s) => s.role === "batteryOut", vsBattKey);
+  // batteryOut-Entladung der laufenden VS als Vorschau. WICHTIG: denselben Zähler
+  // verwenden wie die finale Bilanz (batteryOutMeter -> energyReturnTotal bei
+  // bidirektionalen Speichern), NICHT pauschal energyTotal. Sonst misst die
+  // Vorschau den Gesamtdurchsatz (Laden+Entladen) gegen einen auf die Entladung
+  // gesetzten Anker und liefert einen viel zu hohen Wert (Speicher-Anteil zu
+  // Beginn der VS massiv überhöht).
+  let battDelta0 = 0;
+  for (const s of sources) {
+    if (!sourceEnabled(s) || s.role !== "batteryOut") continue;
+    battDelta0 += vsDiffPeek(vsBattKey(s.id), batteryOutMeter(s));
+  }
   let battDelta = battDelta0;
   // AC-Speicher-Entladung (ret_aenergy) hinzuziehen – Vorschau, ohne Anker zu
   // verschieben (konsistent zur abgeschlossenen VS in buildSlotEntry).
@@ -2752,6 +2866,12 @@ async function pollSource(id: string): Promise<void> {
     const result = await readSource(src);
     lastRead[id] = { values: result.values, display: result.display, modules: result.modules };
     recordSuccess(id);
+    // Schaltbare Quellen: aktuellen Schaltzustand ermitteln und cachen. Die Poll-
+    // URL wurde gerade abgefragt (Cache-Hit), getSwitchState nutzt sie wieder.
+    if (src.switchable) {
+      try { switchStateCache[id] = await getSwitchState(src, resolveSwitchChannel(src)); }
+      catch { /* Zustand bleibt unverändert */ }
+    }
     // Wärmepumpe: alle numerischen Datenreihen im Poll-Intervall persistieren,
     // damit sie später als Tagesverlauf visualisiert werden können. Bool wird
     // als 0/1 gespeichert, reine Text-Felder (z.B. Betriebsmodus) übersprungen.
@@ -2783,6 +2903,27 @@ async function pollSource(id: string): Promise<void> {
         db.saveWpData(nowSecondsIso(), series);
       }
     }
+    // Generische Geräte-Persistierung (Luftsensor, 3D-Drucker, Lüftung): die in
+    // persistLabels ausgewählten Datenpunkte speichern (mit Änderungserkennung +
+    // Heartbeat, wie bei der Wärmepumpe). Optional zusätzlich die hochaufgelöste
+    // elektrische Leistung der verlinkten Leistungsquelle (persistPower).
+    if (src.role === "airSensor" || src.role === "prusa" || src.role === "vallox"
+        || src.role === "mitsubishiAc" || src.role === "ccuHub" || src.role === "hueBridge"
+        || src.role === "evcc") {
+      const gewaehlt = new Set(src.persistLabels ?? []);
+      const series: Record<string, number> = {};
+      for (const d of result.display) {
+        if (!gewaehlt.has(d.label)) continue;
+        if (typeof d.value === "number") series[d.label] = d.value;
+        else if (typeof d.value === "boolean") series[d.label] = d.value ? 1 : 0;
+      }
+      // Hochaufgelöste Energiemessung: elektrische Leistung entkoppelt mitspeichern.
+      if (src.persistPower) {
+        const pEl = powerOf(src.id);
+        if (typeof pEl === "number" && !Number.isNaN(pEl)) series["_ElektrischW"] = pEl;
+      }
+      if (Object.keys(series).length > 0) db.saveDeviceDataSmart(src.id, nowSecondsIso(), series);
+    }
     // Warmwasserspeicher-Quelle: die zwei °C-Werte (oben/unten) im Poll-Intervall
     // persistieren, damit sie als Temperaturverlauf visualisiert werden können.
     if (src.role === "waterTank") {
@@ -2801,6 +2942,24 @@ async function pollSource(id: string): Promise<void> {
     recomputeDay();
   } catch (e: any) {
     const msg = e?.message ?? String(e);
+    // Sonderfall: Die Quelle bezieht ihre Leistung von einem verlinkten
+    // schaltbaren Messer (powerSourceId), und dieser ist gerade AUS. Dann ist das
+    // Gerät bewusst stromlos und ein fehlgeschlagener Abruf ist NORMAL – nicht als
+    // Fehler werten (kein roter Punkt, keine Fehlermeldung, kein Log-Rauschen).
+    const srcCfg = sources.find((s) => s.id === id);
+    const linkId = (srcCfg as any)?.powerSourceId as string | undefined;
+    if (linkId) {
+      const linked = sources.find((s) => s.id === linkId);
+      if (linked?.switchable && switchStateCache[linkId] === false) {
+        // Als "aus" führen: kein Fehler, kein roter Punkt. Flag setzen, damit das
+        // Frontend einen neutralen "aus"-Zustand statt Fehler zeigt.
+        const st = ensureStatus(id);
+        st.lastError = null;
+        st.ausgeschaltet = true;
+        broadcast();
+        return;
+      }
+    }
     // Erwartbares "Gerät nicht erreichbar"-Rauschen (Timeouts, HTTP 503, TCP-/
     // Netzwerkfehler eines offline gegangenen Geräts) nur als debug UND nur
     // EINMAL pro Offline-Phase loggen. So flutet ein nachts abgeschalteter
@@ -2899,17 +3058,51 @@ export function getState(): FullState {
           .reduce<number | null>((acc, v) => (v == null ? acc : Math.max(acc ?? 0, v)), null)
       : sourceStatus[src.id]?.lastSuccess ?? null,
     lastError: sourceStatus[src.id]?.lastError ?? null,
+    ausgeschaltet: sourceStatus[src.id]?.ausgeschaltet ?? false,
     intervalSec: src.intervalSec,
+    // Schaltbar: entweder die Quelle selbst, ODER eine verlinkte Leistungsquelle
+    // (powerSourceId), die schaltbar ist (z. B. Prusa-Drucker mit verlinktem
+    // Shelly). Dann wird über die verlinkte Quelle geschaltet.
+    ...(() => {
+      if (src.switchable) {
+        return { switchable: true, switchState: switchStateCache[src.id] ?? null, switchVia: src.id };
+      }
+      const linkId = (src as any).powerSourceId as string | undefined;
+      if (linkId) {
+        const linked = sources.find((x) => x.id === linkId);
+        if (linked?.switchable) {
+          return { switchable: true, switchState: switchStateCache[linkId] ?? null, switchVia: linkId };
+        }
+      }
+      return { switchable: false, switchState: undefined, switchVia: undefined };
+    })(),
     enabled: sourceEnabled(src),
     values: src.role === "dcBattery"
       ? dcLinkedValues(src)
-      : [
-          ...(lastRead[src.id]?.display ?? src.fields.map((f) => ({
+      : (() => {
+          const eigene = lastRead[src.id]?.display ?? src.fields.map((f) => ({
             label: f.label, value: 0 as number | boolean | string, unit: f.unit,
-          }))),
-          // Werte etwaiger untergeordneter Quellen integrieren.
-          ...subordinateValues(src.id),
-        ],
+          }));
+          const subs = subordinateValues(src.id);
+          let alle = [...eigene, ...subs];
+          // Leere/namenlose Einträge entfernen (z. B. ein Feld ohne Label, das
+          // sonst als ": 0 W" erscheint).
+          alle = alle.filter((v) => (v.label ?? "").trim() !== "");
+          // Geräte-Rollen mit verlinkter Leistungsquelle: genau EINEN sauberen
+          // Leistungs-Eintrag zeigen (Momentanleistung der verlinkten Quelle),
+          // und etwaige doppelte/rohe Leistungszeilen der Unterquelle entfernen.
+          const geraeteRolle = src.role === "prusa" || src.role === "vallox" || src.role === "mitsubishiAc" || src.role === "airSensor";
+          if (geraeteRolle && (src as any).powerSourceId) {
+            // vorhandene Leistungszeilen (Einheit W) herausfiltern, dann eine
+            // einheitliche hinzufügen.
+            alle = alle.filter((v) => v.unit !== "W");
+            const pEl = powerOf(src.id);
+            if (typeof pEl === "number" && !Number.isNaN(pEl)) {
+              alle.push({ label: "Leistung", value: Math.round(pEl), unit: "W" });
+            }
+          }
+          return alle;
+        })(),
   }));
   return {
     live: { ...live },
@@ -3318,6 +3511,107 @@ export function startPoller(): void {
     } catch { /* ignore */ }
   };
   setInterval(lppTick, 5000);
+
+  // Anomalie-Erkennung: eigener langsamer Tick (60 s), getrennt vom schnellen
+  // Poll. Baut den Kontext aus dem aktuellen Zustand und lässt die Detektoren
+  // laufen. Bewusst in try/catch, damit ein Fehler hier den Poller nicht stört.
+  anomalyModule.loadAnomalieConfig();
+  // Benachrichtigung bei neu bestätigter Anomalie – je Detektor schaltbar.
+  anomalyModule.setAnomalieNotifyHook((detektorId, detektorName, objektName, detail) => {
+    const notify = db.loadNotifySettings();
+    if (!notify.enabled) return;
+    // Je-Detektor-Schalter: fehlt der Eintrag, gilt "an" (Default).
+    if (notify.notifyAnomalie && notify.notifyAnomalie[detektorId] === false) return;
+    const ziel = objektName ? `${detektorName}: ${objektName}` : detektorName;
+    void sendNtfy(`Anomalie erkannt – ${ziel}. ${detail}`.trim(), {
+      title: "Anomalie erkannt", priority: 4, tags: ["warning"],
+      triggerId: `anomalie:${detektorId}`,
+    });
+  });
+  // Zuletzt vom Anomalie-Tick gesehener Tages-Anker – zur Erkennung des Tageswechsels
+  // für die Verbrauchs-Baseline (die nur einmal je abgeschlossenem Tag auswertet).
+  let anomalieLetzterTag: string | null = db.getDayReset();
+  const anomalieTick = () => {
+    try {
+      const now = Date.now();
+      const quellen = sources.map((s) => ({
+        id: s.id, label: s.label, role: s.role, intervalSec: s.intervalSec,
+        enabled: sourceEnabled(s),
+        lastSuccess: sourceStatus[s.id]?.lastSuccess ?? null,
+        ausgeschaltet: sourceStatus[s.id]?.ausgeschaltet ?? false,
+      }));
+      // Wechselrichter-Gruppe je PV-Strang: Stränge mit gleicher Host/IP gehören
+      // zum selben Wechselrichter und werden nur untereinander verglichen. Aus der
+      // Abfrage-URL wird der Host extrahiert; bei MQTT das Topic-Präfix; sonst die
+      // Quellen-ID (dann bildet der Strang eine eigene Gruppe).
+      const wrGruppe = (s: SourceConfig): string => {
+        try {
+          if (s.url) {
+            const u = new URL(s.url.includes("://") ? s.url : `http://${s.url}`);
+            return u.hostname || s.id;
+          }
+        } catch { /* URL nicht parsbar */ }
+        if (s.mqttTopic) return s.mqttTopic.split("/")[0] || s.id;
+        return s.id;
+      };
+      const pvStraenge = sources
+        .filter((s) => s.role === "pv" && sourceEnabled(s))
+        .map((s) => ({ id: s.id, label: s.label, watt: Math.max(0, powerOf(s.id)), gruppe: wrGruppe(s) }));
+      let socMax = 0;
+      let reserveW = 0;
+      for (const bs of (live.batterySocs ?? [])) {
+        if (bs.soc != null && bs.soc > socMax) socMax = bs.soc;
+        if (bs.soc != null && bs.soc > 10 && bs.power != null && bs.power < 0) {
+          reserveW += -bs.power;
+        }
+      }
+      // Tageswechsel für die Verbrauchs-Baseline erkennen: hat sich der zentrale
+      // Tages-Anker seit dem letzten Anomalie-Tick geändert, ist der VORHERIGE Tag
+      // abgeschlossen und kann bewertet werden.
+      const aktuellerTag = db.getDayReset();
+      let abgeschlossenerTag: string | null = null;
+      if (aktuellerTag && anomalieLetzterTag && aktuellerTag !== anomalieLetzterTag) {
+        abgeschlossenerTag = anomalieLetzterTag; // der gerade beendete Tag
+      }
+      anomalieLetzterTag = aktuellerTag;
+      // Verbraucherliste (für die Baseline).
+      const verbraucher = sources
+        .filter((s) => s.role === "consumer" && sourceEnabled(s))
+        .map((s) => ({ id: s.id, label: s.label }));
+      // Momentanleistung je Verbraucher + Wasser-Durchfluss (für Urlaubs-Detektor).
+      const verbraucherLeistung: Record<string, number> = {};
+      for (const s of sources) {
+        if (s.role === "consumer" && sourceEnabled(s)) verbraucherLeistung[s.id] = Math.max(0, powerOf(s.id));
+      }
+      // Wasser fließt? Über den Live-Wasserverbrauch der aktuellen Viertelstunde:
+      // ist im laufenden Slot Verbrauch entstanden, fließt aktuell Wasser. Das
+      // passt zur Zähler-Granularität (m³-Stand, nur bei Verbrauch aktualisiert).
+      const wasserFliesst = getWasserSlotLiter() > 0;
+      const heuteDatum = new Date(now).toISOString().slice(0, 10);
+
+      // Hue-Untergeräte (Leuchten/Bewegungsmelder) für den Urlaubs-Detektor.
+      const hueGeraete = getAllHueSubDevices()
+        .filter((h) => h.kind === "light" || h.kind === "motion")
+        .map((h) => ({ serviceId: h.serviceId, name: h.name, kind: h.kind, on: h.on, motion: h.motion }));
+
+      anomalyModule.tickAnomalie({
+        quellen, pvStraenge,
+        standort: pvanlagen.getPvStandort(),
+        startMs: FLUX_START_MS,
+        gridPowerW: live.gridPower,
+        batterieSocMax: socMax,
+        batterieEntladeReserveW: reserveW,
+        jetztMs: now,
+        verbraucher,
+        abgeschlossenerTag,
+        verbraucherLeistung,
+        wasserFliesst,
+        heuteDatum,
+        hueGeraete,
+      });
+    } catch { /* ignore */ }
+  };
+  setInterval(anomalieTick, 60000);
 
   // Fehlende History-Tage aus Viertelstundenwerten nachtragen. Behebt Fälle, in
   // denen der Tagesabschluss übersprungen wurde (z. B. Start mitten am Tag), die

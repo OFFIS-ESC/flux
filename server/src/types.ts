@@ -96,7 +96,7 @@ export type RuleOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
 export interface RuleCondition {
   id: string;
-  kind: "metric" | "time" | "sourceActive" | "sourceInactive" | "sourceOffline" | "sourceUnreachable" | "dailyTrigger" | "dailyAtTime" | "tarifMode" | "timerElapsed" | "ctFadeState" | "ruleRunning";
+  kind: "metric" | "time" | "sourceActive" | "sourceInactive" | "sourceOffline" | "sourceUnreachable" | "dailyTrigger" | "dailyAtTime" | "tarifMode" | "timerElapsed" | "ctFadeState" | "ruleRunning" | "hueState" | "ccuState" | "alarmMode" | "ssEvent" | "klimaState" | "valloxState" | "airState" | "prusaState" | "evccState";
   // kind "metric":
   metric?: RuleMetric;
   sourceId?: string;      // für metric=sourcePower bzw. sourceActive/Inactive
@@ -121,6 +121,64 @@ export interface RuleCondition {
   // aktuell läuft (ruleRunningExpected true) bzw. nicht läuft (false).
   ruleId?: string;
   ruleRunningExpected?: boolean;
+  // kind "hueState": prüft den Zustand eines Hue-Untergeräts.
+  //   hueSourceId  = Bridge-Quelle, hueServiceId = Untergerät (light/motion).
+  //   hueExpectOn  = für Leuchten: erfüllt, wenn an (true) bzw. aus (false).
+  //   hueExpectMotion = für Bewegungsmelder: erfüllt, wenn Bewegung (true) bzw.
+  //                  keine Bewegung (false).
+  hueSourceId?: string;
+  hueServiceId?: string;
+  hueExpectOn?: boolean;
+  hueExpectMotion?: boolean;
+  // kind "ccuState": prüft den Zustand eines CCU-Untergeräts (Datenpunkt).
+  //   ccuSourceId = CCU-Quelle, ccuIseId = Datenpunkt-ID.
+  //   ccuExpectBool = erwarteter Bool-Zustand (Schalter/Kontakt/Bewegung), ODER
+  //   ccuCompare/ccuThreshold für Zahlenwerte (Temperatur etc.).
+  ccuSourceId?: string;
+  ccuIseId?: string;
+  ccuExpectBool?: boolean;
+  ccuCompare?: "gt" | "lt";
+  ccuThreshold?: number;
+  // kind "alarmMode": prüft den Alarm-Modus einer CCU/HCU-Quelle.
+  alarmSourceId?: string;
+  alarmExpectModus?: "unscharf" | "anwesenheit" | "vollschutz";
+  // kind "ssEvent": Kamera-Ereignis (SecuritySpy) als Auslöser (Impuls).
+  //   ssSourceId = Quelle, ssCam = Kameranummer, ssArt = Ereignisart.
+  ssSourceId?: string;
+  ssCam?: number;
+  ssArt?: "motion" | "human" | "vehicle" | "animal";
+  // kind "klimaState": Zustand einer Klimaanlage prüfen.
+  //   klimaSourceId = Quelle; klimaExpectPower = an/aus, ODER Raumtemperatur-
+  //   Vergleich über klimaCompare/klimaThreshold.
+  klimaSourceId?: string;
+  klimaExpectPower?: boolean;
+  klimaCompare?: "gt" | "lt";
+  klimaThreshold?: number;
+  // kind "valloxState": Zustand der Lüftung prüfen (an/aus oder Stufe-Vergleich).
+  valloxSourceId?: string;
+  valloxExpectPower?: boolean;
+  valloxCompare?: "gt" | "lt";      // Vergleich der Lüfterstufe
+  valloxThreshold?: number;
+  // kind "airState": Luftsensor-Messwert vergleichen.
+  airSourceId?: string;
+  airMetric?: "pm25" | "pm10" | "temperature" | "pressure";
+  // prusaState: Druckfortschritt/Zustand des 3D-Druckers prüfen.
+  //   prusaSourceId = Quelle; prusaMetric = "progress"/"printing"/"remainingMin";
+  //   prusaCompare = "gt"/"lt"; prusaThreshold = Schwellwert
+  prusaSourceId?: string;
+  prusaMetric?: "progress" | "printing" | "remainingMin";
+  prusaCompare?: "gt" | "lt";
+  prusaThreshold?: number;
+  // evccState: Elektroauto-Zustand prüfen.
+  //   evccSourceId = Quelle; evccMetric = "soc"/"connected"/"charging"/"mode";
+  //   evccCompare = "gt"/"lt" (für soc); evccThreshold (soc %) bzw. evccExpect (bool/mode)
+  evccSourceId?: string;
+  evccMetric?: "soc" | "connected" | "charging" | "mode";
+  evccCompare?: "gt" | "lt";
+  evccThreshold?: number;
+  evccExpect?: string;   // für connected/charging: "true"/"false"; für mode: "off"/"pv"/"minpv"/"now"
+  airCompare?: "gt" | "lt";
+  airThreshold?: number;
 }
 
 // Verknüpfung mehrerer Bedingungen.
@@ -129,7 +187,27 @@ export interface RuleConditionGroup {
   conditions: RuleCondition[];
 }
 
-export type RuleActionType = "switch" | "notify" | "acspeicher" | "timer" | "ctfade" | "ctnoac";
+export type RuleActionType = "switch" | "notify" | "acspeicher" | "timer" | "ctfade" | "ctnoac" | "hue" | "ccu" | "alarm" | "klima" | "vallox" | "evcc";
+
+// Eine Zugangs-Berechtigung: ein gültiger Tag oder eine PIN mit Gültigkeit und
+// den auszulösenden Aktionen. Die Aktionen nutzen dieselbe Struktur wie
+// Regel-Aktionen (RuleAction) – so sind alle Aktortypen (Hue, Homematic, Shelly,
+// Tasmota, Alarm, Nachricht) und das Auslösen von Regeln verfügbar.
+export interface AccessEntry {
+  id: string;
+  art: "card" | "pin";        // Tag/Karte oder PIN
+  wert: string;               // die Karten-ID (dezimal) bzw. die PIN
+  name: string;               // Klartext (z.B. "Sven Haustür-Fob")
+  aktiv: boolean;             // Eintrag aktiv?
+  // Gültigkeitszeiten (optional). Fehlt alles, gilt der Eintrag immer.
+  wochentage?: number[];      // erlaubte Wochentage 0=So..6=Sa; leer/fehlt = alle
+  vonUhr?: string;            // "HH:MM" Tageszeit-Fenster Beginn
+  bisUhr?: string;            // "HH:MM" Tageszeit-Fenster Ende
+  ablauf?: string;            // ISO-Datum, nach dem der Eintrag ungültig ist
+  // Auszulösende Aktionen (wie Regel-Aktionen) und/oder auszulösende Regeln.
+  aktionen: RuleAction[];
+  ausloeseRegeln?: string[];  // IDs von Automatisierungsregeln, die getriggert werden
+}
 
 export interface RuleAction {
   type: RuleActionType;
@@ -162,6 +240,43 @@ export interface RuleAction {
   // Betriebsmodus, in den der Speicher nach dem Ende der Regel (Ausschalten)
   // versetzt wird. Ohne Angabe: "manual" (kein automatischer Eigenverbrauch).
   acAfterMode?: "manual" | "selfconsumption" | "trade";
+  // type "hue": schaltet eine Hue-Leuchte über die Bridge.
+  //   hueSourceId = Bridge-Quelle, hueServiceId = Leuchte.
+  //   hueSwitchTo = "on"/"off"; hueBrightness optional (0..100).
+  hueSourceId?: string;
+  hueServiceId?: string;
+  hueSwitchTo?: "on" | "off";
+  hueBrightness?: number;
+  // type "ccu": schaltet einen CCU-Datenpunkt.
+  //   ccuSourceId = CCU-Quelle, ccuIseId = Datenpunkt/Gruppe.
+  //   ccuAktion bestimmt die Art: "switch" (an/aus), "shutter" (Position/Stopp).
+  ccuSourceId?: string;
+  ccuIseId?: string;
+  ccuSwitchTo?: "on" | "off";
+  ccuAktion?: "switch" | "shutter";
+  ccuShutter?: "up" | "down" | "stop" | "position"; // Rollladen-Aktion
+  ccuPosition?: number; // bei ccuShutter "position": 0..100 (%)
+  // type "alarm": setzt den Alarm-Modus einer CCU/HCU-Quelle.
+  alarmSourceId?: string;
+  alarmModus?: "unscharf" | "anwesenheit" | "vollschutz";
+  // type "klima": Klimaanlage steuern.
+  //   klimaSourceId = Quelle; klimaAktion = "power"/"temp"/"mode";
+  //   klimaPower (an/aus), klimaTemp (°C), klimaMode.
+  klimaSourceId?: string;
+  klimaAktion?: "power" | "temp" | "mode";
+  klimaPower?: boolean;
+  klimaTemp?: number;
+  klimaMode?: string;
+  // type "vallox": Lüftung steuern (an/aus, Stufe).
+  valloxSourceId?: string;
+  valloxAktion?: "power" | "speed";
+  valloxPower?: boolean;
+  valloxSpeed?: number;
+  // type "evcc": Elektroauto-Ladung steuern (Lademodus, Ladelimit).
+  evccSourceId?: string;
+  evccAktion?: "mode" | "limitsoc";
+  evccMode?: string;        // "off"/"pv"/"minpv"/"now"
+  evccLimitSoc?: number;    // Ziel-SoC in %
 }
 
 export interface AutomationRule {
@@ -613,6 +728,12 @@ export interface NotifySettings {
   server: string; // Basis-URL des ntfy-Servers (Default https://ntfy.sh)
   topic: string; // Topic-Name (frei wählbar, z. B. "flux-mein-haus")
   minIntervalMin: number; // minimaler Abstand gleicher Meldungen (Anti-Spam)
+  // Thematische Schalter, je Bereich getrennt (Default: an, sofern enabled).
+  notifyLpc?: boolean;      // §14a-Bezugsbegrenzung (ein/aus)
+  notifyLpp?: boolean;      // §9-Einspeisebegrenzung (ein/aus)
+  notifyRules?: boolean;    // Benachrichtigungen aus Automatisierungsregeln
+  // Anomalie-Benachrichtigungen je Detektor (Detektor-Schlüssel -> an/aus).
+  notifyAnomalie?: Record<string, boolean>;
 }
 
 // Ein einzelner gelesener Wert einer Quelle (für die Statusseite)
@@ -720,4 +841,115 @@ export interface LpcMonitorConfig {
   enabled: boolean;   // Überwachung aktiv?
   steuve: SteuVe[];   // beim Netzbetreiber angemeldete steuerbare Einrichtungen
   warnschwelleProzent: number; // ab wie viel % des Limits gewarnt wird (Default 90)
+}
+
+// --- Anomalie-Erkennung (eigenständiges Subsystem) ---
+//
+// Kategorienbasiert statt objektbasiert: Es gibt eine feste, kleine Menge
+// eingebauter DETEKTOREN, die jeweils automatisch über alle passenden Objekte
+// laufen. Der Nutzer legt keine Regeln pro Gerät an, sondern schaltet Detektoren
+// an/aus, stellt ihre Empfindlichkeit ein und pflegt optional eine Negativliste
+// (Objekte, die dieser Detektor ignorieren soll).
+
+export type AnomalieDetektorId = "source-offline" | "pv-string" | "grid-trotz-speicher" | "verbrauch-baseline" | "urlaub";
+
+export interface AnomalieDetektorConfig {
+  id: AnomalieDetektorId;
+  enabled: boolean;
+  // Freie Parameter je Detektor (Empfindlichkeit). Bedeutung je Detektor:
+  //  source-offline:      { faktor: number (× Poll-Intervall), minSekunden: number }
+  //  pv-string:           { anteilProzent: number, minWatt: number, bestaetigungMin: number }
+  //  grid-trotz-speicher: { minWatt: number, minSoc: number, bestaetigungMin: number }
+  params: Record<string, number>;
+  ignoriert: string[]; // IDs von Objekten (Quellen), die dieser Detektor ignoriert
+  // Nur für verbrauch-baseline: Objekte, die trotz zu hoher Streuung ERZWUNGEN
+  // überwacht werden (manuelle Übersteuerung der automatischen Eignungsprüfung).
+  erzwungen?: string[];
+  // Nur für urlaub: geplanter Zeitraum (ISO-Datum "YYYY-MM-DD") und die zu
+  // überwachenden Objekte. Der Detektor ist nur zwischen Start und Ende aktiv.
+  urlaubStart?: string | null;
+  urlaubEnde?: string | null;
+  ueberwachteVerbraucher?: string[]; // IDs der im Urlaub überwachten Verbraucher
+  ueberwacheWasser?: boolean;        // zusätzlich Wasserabgabe überwachen
+  // Nur für urlaub: überwachte Hue-Untergeräte (Bewegungsmelder + Leuchten). Im
+  // Urlaub gilt: gemeldete Bewegung oder eine eingeschaltete Leuchte ist
+  // verdächtig. Werte sind die Hue-serviceIds.
+  ueberwachteHue?: string[];
+}
+
+export interface AnomalieConfig {
+  enabled: boolean;                 // Gesamtschalter der Anomalie-Erkennung
+  detektoren: AnomalieDetektorConfig[];
+  // Ab wie vielen gleichartigen Bewertungen ein Verbesserungsvorschlag entsteht.
+  vorschlagSchwelle?: number;       // Default 3
+}
+
+// Ein aus dem Feedback abgeleiteter, regelbasierter Verbesserungsvorschlag (Stufe 4).
+// aktion beschreibt die Ein-Klick-Übernahme (was genau geändert würde).
+export type AnomalieVorschlagArt = "ignorieren" | "empfindlichkeit-senken" | "positiv";
+export interface AnomalieVorschlag {
+  id: string;                       // stabile ID (detektor+objekt+art), für Dedup
+  art: AnomalieVorschlagArt;
+  detektorId: AnomalieDetektorId;
+  detektorName: string;
+  objektId: string | null;          // betroffenes Objekt (null = detektorweit)
+  objektName: string | null;
+  text: string;                     // Klartext-Vorschlag
+  anzahl: number;                   // wie viele Bewertungen das Muster stützen
+  // aktion: was der Ein-Klick-Button tut (vom Server interpretiert).
+  aktion: { typ: "ignorieren"; detektorId: string; objektId: string }
+        | { typ: "empfindlichkeit-senken"; detektorId: string }
+        | { typ: "keine" };
+}
+
+// Ein Anomalie-Eintrag mit Lebenszyklus:
+//  aktiv     -> gerade auffällig
+//  quittiert -> vom Nutzer bestätigt; wird unterdrückt, bis der Zustand sich
+//               einmal auflöst (dann kann er erneut anschlagen)
+//  beendet   -> Detektor sah wieder stabilen Normalzustand
+export type AnomalieStatus = "aktiv" | "quittiert" | "beendet";
+
+// Bewertung einer Anomalie durch den Nutzer (Stufe 3). Grundlage für die
+// regelbasierten Vorschläge in Stufe 4.
+export type AnomalieFeedback = "richtig" | "unwichtig" | "fehlalarm";
+
+export interface Anomalie {
+  id: string;                 // eindeutige laufende ID
+  detektorId: AnomalieDetektorId;
+  detektorName: string;       // Klartext für die Anzeige
+  objektId: string;           // betroffenes Objekt (z. B. Quellen-ID)
+  objektName: string;         // Klartext des Objekts
+  status: AnomalieStatus;
+  seit: string;               // ISO: erste Erkennung
+  zuletztGesehen: string;     // ISO: letzte Bestätigung als weiterhin auffällig
+  beendetAm: string | null;   // ISO: wann in Normalzustand zurück
+  quittiertAm: string | null; // ISO: wann quittiert
+  feedback?: AnomalieFeedback | null; // Bewertung durch den Nutzer (Stufe 3)
+  feedbackAm?: string | null;         // ISO: wann bewertet
+  detail: string;             // konkreter Grund (Klartext)
+  messwerte: Record<string, number>; // die auslösenden Zahlen (Nachvollziehbarkeit)
+  // Eingefrorene, ausführliche Begründung zum Auslösezeitpunkt (Stufe 2). Zeigt
+  // den Vergleich, der zum Alarm führte – unabhängig von der späteren Entwicklung.
+  begruendung?: AnomalieBegruendung;
+}
+
+// Ausführliche Begründung. felder = strukturierte Kennzahl-Zeilen (Label/Wert)
+// für alle Detektoren; verlauf = optionale Balkendaten (nur Baseline) mit den
+// historischen Tageswerten und der Schwelle, die galt.
+export interface AnomalieBegruendung {
+  titel: string;
+  felder: Array<{ label: string; wert: string; hervor?: boolean }>;
+  verlauf?: {
+    einheit: string;                         // z. B. "kWh/Tag"
+    schwelleOben?: number;                    // Alarmschwelle (für die Linie)
+    tage: Array<{ tag: string; wert: number }>; // chronologisch
+    heuteWert: number;                        // der auslösende Wert
+  };
+}
+
+export interface AnomalieStatusResponse {
+  enabled: boolean;
+  aktiv: Anomalie[];      // status = aktiv
+  quittiert: Anomalie[];  // status = quittiert, noch andauernd
+  gesamtStatus: "ok" | "auffaellig"; // Ampel-Kopf
 }

@@ -158,7 +158,10 @@ export async function getSwitchState(src: SourceConfig, channel: number): Promis
     // Wird die Quelle regulär gepollt, aber die Poll-URL liefert keinen (aktuellen)
     // Zustand, ist das Gerät praktisch offline. Dann NICHT noch mehrere weitere
     // Endpunkte durchprobieren (die alle in Timeouts laufen und sich aufstauen) –
-    // außer bei Tasmota, dessen Schaltzustand über ein anderes Kommando kommt.
+    // AUSSER: (a) Tasmota (anderer Schaltzustands-Endpunkt) oder (b) die Poll-URL
+    // liefert zwar ein Dokument, aber ohne Schaltzustand (z. B. Shelly1 wird über
+    // /meter/0 gepollt, der Zustand steckt aber in /status bzw. /relay/0). Nur wenn
+    // das Gerät GAR NICHT antwortet (polled == null) brechen wir früh ab.
     if (polled == null && !isTasmota(src)) return null;
   }
 

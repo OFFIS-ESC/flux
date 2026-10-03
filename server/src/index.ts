@@ -43,10 +43,15 @@ import {
   currentViertelstunde,
   computeCurrentViertelstunde,
   powerOf,
+  live as pollerLive,
 } from "./poller.js";
+import { holeCo2Intensitaet, getLetzteCo2Intensitaet, setLetzteCo2Intensitaet, holeCo2Historie } from "./co2.js";
 import { readSource as testSource, extractFields } from "./fetcher.js";
 import { testMqttSource } from "./mqttClient.js";
 import * as pvanlagen from "./pvanlagen.js";
+import { holeWetter } from "./wetter.js";
+import { initAccessReader, getAllReaderStatus, pollExterneReader } from "./accessreader.js";
+import { initAccessControl, setAccessAktionRunner, setAccessRegelTrigger } from "./accesscontrol.js";
 import * as db from "./db.js";
 import { startShellyDiscovery } from "./shellyudp.js";
 import { startCtEmulation, getCtBalancerSnapshot } from "./marstekCt.js";
@@ -92,9 +97,27 @@ import {
   serializeLpcMonitorConfig, loadLpcMonitorConfig, getLpcMonitorStatus,
   tickLpcMonitor, setLpcIstLeistungProvider,
 } from "./lpcMonitor.js";
-import { sendNtfyTest, notifyTransition } from "./notify.js";
-import { getConditionStatus, getActionStatus, getRuleActive, getRuleActiveSince, manualTrigger, setCtFadeoutProvider, setCtFadeStateProvider, setCtNoAcChargeProvider, setCtNoAcChargeStateProvider, PUSH_VARIABLES } from "./rules.js";
+import {
+  getAnomalieStatus, getAnomalieHistorie, getAnomalieConfig, saveAnomalieConfig,
+  quittiereAnomalie, getBaselineTransparenz, bewerteAnomalie, getAnomalieFeedbackProtokoll,
+  getAnomalieVorschlaege, wendeVorschlagAn, DETEKTOR_NAMEN,
+} from "./anomaly.js";
+import { sendNtfyTest, sendNtfyTestChannel, notifyTransition } from "./notify.js";
+import { getConditionStatus, getActionStatus, getRuleActive, getRuleActiveSince, manualTrigger, setCtFadeoutProvider, setCtFadeStateProvider, setCtNoAcChargeProvider, setCtNoAcChargeStateProvider, PUSH_VARIABLES, runAccessAction } from "./rules.js";
 import { switchSource, getSwitchState, resolveSwitchChannel } from "./switch.js";
+import { schalteHueLicht, getHueSnapshot, getAllHueSubDevices } from "./hue.js";
+import { schalteCcuDatenpunkt, getAllHubSubDevices, schalteHub, setAlarmModus, loeseSirenAus, getHubSnapshot } from "./ccu.js";
+import { getAllSsCameras, getSsSnapshot, fetchCameraImage, proxyCameraStream, fetchRecordings, fetchAllRecordings, proxyRecording } from "./securityspy.js";
+import { getAllAcStates, getAcState, acSetPower, acSetMode, acSetTemp, acSetFan, acSetVane, acSetWideVane } from "./mitsubishiac.js";
+import { getAllPrusaStates } from "./prusa.js";
+import { getAllAirStates, getAirState } from "./airsensor.js";
+import { getAllEvccStates, evccSetMode, evccSetLimitSoc, readEvccSessions, evccSetMinCurrent, evccSetMaxCurrent, evccSetPhases } from "./evcc.js";
+import { berechneRueckblick } from "./rueckblick.js";
+import { pollAir } from "./airsensor.js";
+import { pollPrusa as pollPrusaTest } from "./prusa.js";
+import { getAllValloxStates, valloxSetPower, valloxSetSpeed } from "./vallox.js";
+import { startMqttBroker, getMqttStatus, getMqttTopics } from "./mqttbroker.js";
+
 import {
   parseMarstekTarget,
   readMarstek,
@@ -144,7 +167,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 // Zentrale Versionsnummer der Anwendung (Anzeige unter "Live" im Menü und klein
 // auf der Übersichtsseite). Bei jeder Auslieferung erhöhen.
-const APP_VERSION = "v412";
+const APP_VERSION = "v536";
 // Body-Limit großzügig: Der Daten-Import (Messwerte über lange Zeiträume) kann
 // viele MB groß werden. Läuft rein lokal, daher unkritisch.
 app.use(express.json({ limit: "200mb" }));
@@ -1254,7 +1277,15 @@ app.post("/api/notify", (req, res) => {
   db.saveNotifySettings(s);
   res.json({ ok: true, settings: db.loadNotifySettings() });
 });
-app.post("/api/notify/test", async (_req, res) => {
+app.post("/api/notify/test", async (req, res) => {
+  const channelId = typeof req.body?.channelId === "string" ? req.body.channelId : "";
+  if (channelId) {
+    const ch = db.loadNtfyChannels().find((c) => c.id === channelId);
+    if (!ch) return res.status(400).json({ ok: false, error: "Kanal nicht gefunden" });
+    if (!ch.topic.trim()) return res.status(400).json({ ok: false, error: "Kein Topic gesetzt" });
+    const r = await sendNtfyTestChannel(ch);
+    return r.ok ? res.json({ ok: true }) : res.status(400).json({ ok: false, error: r.error });
+  }
   const r = await sendNtfyTest();
   if (r.ok) res.json({ ok: true });
   else res.status(400).json({ ok: false, error: r.error });
@@ -1380,12 +1411,71 @@ app.post("/api/menu", (req, res) => {
     .filter((it) => it && typeof it.id === "string")
     .map((it) => ({
       id: String(it.id),
+      hidden: it.hidden === true ? true : undefined, // Sichtbarkeit erhalten
       children: Array.isArray(it.children)
-        ? it.children.filter((c: any) => c && typeof c.id === "string").map((c: any) => ({ id: String(c.id) }))
+        ? it.children.filter((c: any) => c && typeof c.id === "string").map((c: any) => ({ id: String(c.id), hidden: c.hidden === true ? true : undefined }))
         : undefined,
     }));
   db.setSettingRaw("menuConfig", JSON.stringify(clean));
   res.json({ ok: true, config: clean });
+});
+// --- Benachrichtigungs-Kanäle (mehrere ntfy-Topics) + Auslöser-Routing ---
+app.get("/api/notify/channels", (_req, res) => {
+  res.json({ ok: true, channels: db.loadNtfyChannels() });
+});
+app.post("/api/notify/channels", (req, res) => {
+  const arr = Array.isArray(req.body?.channels) ? req.body.channels : [];
+  const clean = arr.filter((c: any) => c && typeof c.id === "string").map((c: any) => ({
+    id: String(c.id), name: String(c.name ?? "").slice(0, 60),
+    server: String(c.server ?? "").slice(0, 200), topic: String(c.topic ?? "").slice(0, 120),
+    priority: Number(c.priority) || 3, enabled: c.enabled !== false,
+  }));
+  db.saveNtfyChannels(clean);
+  res.json({ ok: true });
+});
+app.get("/api/notify/routing", (_req, res) => {
+  res.json({ ok: true, routing: db.loadNotifyRouting() });
+});
+app.post("/api/notify/routing", (req, res) => {
+  const r = (req.body?.routing && typeof req.body.routing === "object") ? req.body.routing : {};
+  const clean: Record<string, string[]> = {};
+  for (const k of Object.keys(r)) if (Array.isArray(r[k])) clean[k] = r[k].filter((x: any) => typeof x === "string");
+  db.saveNotifyRouting(clean);
+  res.json({ ok: true });
+});
+// Katalog aller Benachrichtigungs-Auslöser (zum Zuordnen auf Kanäle).
+app.get("/api/notify/triggers", (_req, res) => {
+  const gruppen: Array<{ kategorie: string; triggers: Array<{ id: string; label: string }> }> = [];
+  // Automatisierungsregeln mit notify-Aktion.
+  const regelTriggers = db.loadRules()
+    .filter((r) => {
+      const alle = [...(r.onActions ?? []), ...((r as any).offActions ?? [])];
+      return alle.some((a: any) => a.type === "notify");
+    })
+    .map((r) => ({ id: `rule:${r.id}`, label: r.name || r.id }));
+  if (regelTriggers.length) gruppen.push({ kategorie: "Automatisierungsregeln", triggers: regelTriggers });
+  // Anomalie-Detektoren.
+  const anomTriggers = Object.entries(DETEKTOR_NAMEN).map(([id, label]) => ({ id: `anomalie:${id}`, label: label as string }));
+  gruppen.push({ kategorie: "Anomalie-Erkennung", triggers: anomTriggers });
+  // Zustandsübergänge (fest).
+  gruppen.push({ kategorie: "Zustandsübergänge", triggers: [
+    { id: "transition:eebus_lpc", label: "Netzbetreiber-Drosselung Bezug (§14a)" },
+    { id: "transition:eebus_lpp", label: "Netzbetreiber-Drosselung Einspeisung (§14a)" },
+  ] });
+  res.json({ ok: true, gruppen });
+});
+
+// Auf-/Zuklapp-Zustand der Menügruppen (geräteübergreifend serverseitig gemerkt).
+app.get("/api/menu/expanded", (_req, res) => {
+  const raw = db.getSettingRaw("menuExpanded");
+  let ids: string[] = [];
+  if (raw) { try { const p = JSON.parse(raw); if (Array.isArray(p)) ids = p.filter((x) => typeof x === "string"); } catch { /* ignore */ } }
+  res.json({ ok: true, expanded: ids, gesetzt: raw != null });
+});
+app.post("/api/menu/expanded", (req, res) => {
+  const ids = Array.isArray(req.body?.expanded) ? req.body.expanded.filter((x: any) => typeof x === "string") : [];
+  db.setSettingRaw("menuExpanded", JSON.stringify(ids));
+  res.json({ ok: true });
 });
 app.delete("/api/menu", (_req, res) => {
   db.setSettingRaw("menuConfig", "");
@@ -1425,9 +1515,97 @@ app.delete("/api/tileorder", (req, res) => {
   db.setSettingRaw("tileOrder", JSON.stringify(order));
   res.json({ ok: true, order });
 });
-// Gemeinsamer Standort aller PV-Anlagen (lat/lon + optionale Beschriftung).
+
+// --- Kachel-Ordner (je Bereich). Getrennt von tileOrder gespeichert, damit die
+// bestehende flache Sortierung unberührt und rückwärtskompatibel bleibt.
+// Struktur: { bereich: [ { id, name, tiles: string[] }, ... ] }
+app.get("/api/tilefolders", (_req, res) => {
+  const raw = db.getSettingRaw("tileFolders");
+  let folders: Record<string, unknown> = {};
+  if (raw) { try { const p = JSON.parse(raw); if (p && typeof p === "object") folders = p; } catch { folders = {}; } }
+  res.json({ ok: true, folders });
+});
+app.post("/api/tilefolders", (req, res) => {
+  const bereich = typeof req.body?.bereich === "string" ? req.body.bereich.trim() : "";
+  const folders = Array.isArray(req.body?.folders) ? req.body.folders : null;
+  if (!bereich || !folders) return res.status(400).json({ ok: false, error: "bereich (string) und folders (array) erwartet" });
+  // Validieren: jeder Ordner braucht id, name, tiles[].
+  const clean = folders
+    .filter((f: any) => f && typeof f.id === "string" && typeof f.name === "string" && Array.isArray(f.tiles))
+    .map((f: any) => ({ id: f.id, name: String(f.name).slice(0, 60), tiles: f.tiles.filter((t: any) => typeof t === "string") }));
+  const raw = db.getSettingRaw("tileFolders");
+  let all: Record<string, unknown> = {};
+  if (raw) { try { const p = JSON.parse(raw); if (p && typeof p === "object") all = p; } catch { all = {}; } }
+  all[bereich] = clean;
+  db.setSettingRaw("tileFolders", JSON.stringify(all));
+  res.json({ ok: true, folders: all });
+});
+
+// --- Generisches Kachel-System der Übersicht ---
+// Eine Kachel ist ein eigenständiges Objekt: { id, typ, ... }. typ bestimmt die
+// Bedeutung: "rule" (Regel), "shelly" (schaltbare Quelle). Weitere Typen (hue,
+// homematic, alarm, szene, info) folgen. Gespeichert unter overviewTiles.
+// Migration: existieren noch keine Kacheln, werden aus den Regeln mit
+// showOnOverview=true automatisch rule-Kacheln erzeugt (einmalig).
+function ladeOverviewTiles(): any[] {
+  const raw = db.getSettingRaw("overviewTiles");
+  if (raw) { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch { /* neu aufbauen */ } }
+  // Migration aus showOnOverview-Regeln.
+  const migr: any[] = [];
+  try {
+    for (const r of db.loadRules()) {
+      if ((r as any).showOnOverview === true) migr.push({ id: `tile_rule_${r.id}`, typ: "rule", ruleId: r.id });
+    }
+  } catch { /* ignore */ }
+  db.setSettingRaw("overviewTiles", JSON.stringify(migr));
+  return migr;
+}
+app.get("/api/overviewtiles", (_req, res) => {
+  res.json({ ok: true, tiles: ladeOverviewTiles() });
+});
+app.post("/api/overviewtiles", (req, res) => {
+  const tiles = Array.isArray(req.body?.tiles) ? req.body.tiles : null;
+  if (!tiles) return res.status(400).json({ ok: false, error: "tiles (array) erwartet" });
+  // Validieren: jede Kachel braucht id + typ.
+  const clean = tiles
+    .filter((t: any) => t && typeof t.id === "string" && typeof t.typ === "string")
+    .map((t: any) => {
+      const base: any = { id: t.id, typ: t.typ };
+      // sourceId GENERISCH durchreichen: jeder gerätebasierte Kacheltyp (shelly,
+      // hue, hmGroup, alarm, klima, vallox, prusa, airSensor und künftige) nutzt
+      // sie. So kann kein neuer Typ mehr "vergessen" werden und zu "Unbekannt"
+      // führen. Typspezifische Zusatzfelder folgen darunter explizit.
+      if (typeof t.sourceId === "string") base.sourceId = t.sourceId;
+      if (t.typ === "rule" && typeof t.ruleId === "string") base.ruleId = t.ruleId;
+      if (t.typ === "shelly" && t.channel != null) base.channel = Number(t.channel);
+      if (t.typ === "hue" && typeof t.serviceId === "string") base.serviceId = t.serviceId;
+      if (t.typ === "hmGroup" && typeof t.iseId === "string") base.iseId = t.iseId;
+      if (t.typ === "scene") { base.actions = Array.isArray(t.actions) ? t.actions : []; }
+      // Link-Kachel: interne Route ODER externe URL, plus Beschriftung/Icon.
+      if (t.typ === "link") {
+        if (typeof t.linkRoute === "string") base.linkRoute = t.linkRoute;
+        if (typeof t.linkUrl === "string") base.linkUrl = t.linkUrl.slice(0, 500);
+        if (typeof t.linkLabel === "string") base.linkLabel = t.linkLabel.slice(0, 80);
+        if (typeof t.linkIcon === "string") base.linkIcon = t.linkIcon.slice(0, 8);
+      }
+      if (typeof t.name === "string") base.name = t.name.slice(0, 60);
+      return base;
+    });
+  db.setSettingRaw("overviewTiles", JSON.stringify(clean));
+  res.json({ ok: true, tiles: clean });
+});
 app.get("/api/pvanlagen/standort", (_req, res) => {
   res.json({ ok: true, standort: pvanlagen.getPvStandort() });
+});
+// Wettervorhersage (DWD via Bright Sky) für den PV-Standort.
+app.get("/api/wetter", async (req, res) => {
+  const standort = pvanlagen.getPvStandort();
+  if (!standort || !Number.isFinite(standort.lat) || !Number.isFinite(standort.lon)) {
+    return res.json({ ok: false, error: "Kein Standort gesetzt (bei den PV-Anlagen konfigurieren)", stunden: [] });
+  }
+  const tage = req.query?.tage != null ? Number(req.query.tage) : 7;
+  const w = await holeWetter(standort.lat, standort.lon, tage);
+  res.json({ ...w, standortLabel: standort.label });
 });
 app.post("/api/pvanlagen/standort", (req, res) => {
   const b = req.body ?? {};
@@ -1561,11 +1739,541 @@ app.post("/api/switch/test", async (req, res) => {
   const { sourceId, channel, on } = req.body ?? {};
   const src = getSources().find((s) => s.id === sourceId);
   if (!src) return res.status(400).json({ ok: false, error: "Quelle nicht gefunden" });
-  if (!src.switchable) return res.status(400).json({ ok: false, error: "Quelle ist nicht schaltbar" });
+  if (!src.switchable) return res.status(400).json({ ok: false, error: "Quelle ist nicht als schaltbar markiert" });
   // Kanal automatisch aus dem JSON-Pfad ableiten, falls keiner übergeben wurde.
   const ch = channel != null && channel !== "" ? Number(channel) : resolveSwitchChannel(src);
   const ok = await switchSource(src, ch || 0, !!on);
-  res.json({ ok });
+  // Bei Fehlschlag: Schalt-Basis-URL zur Diagnose mitgeben (hilft, eine falsche
+  // Abfrage-/Schalt-URL zu erkennen).
+  if (!ok) {
+    const basis = (src.switchUrl && src.switchUrl.trim()) || src.url || "(keine)";
+    return res.json({ ok: false, error: `Schalten fehlgeschlagen. Schalt-Basis aus: ${basis}. Prüfe die Schalt-URL der Quelle.` });
+  }
+  res.json({ ok: true });
+});
+
+// --- Hue: Untergeräte-Liste + Schalten einer Leuchte ---
+app.get("/api/hue/devices", (_req, res) => {
+  // Alle Hue-Untergeräte über alle Bridge-Quellen (für Auswahl/Anzeige).
+  res.json({ ok: true, devices: getAllHueSubDevices() });
+});
+app.post("/api/hue/switch", async (req, res) => {
+  const { sourceId, serviceId, on, brightness, colorX, colorY } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "hueBridge");
+  if (!src) return res.status(400).json({ ok: false, error: "Hue-Bridge-Quelle nicht gefunden" });
+  if (typeof serviceId !== "string") return res.status(400).json({ ok: false, error: "serviceId erwartet" });
+  const r = await schalteHueLicht(src.hueBridgeHost ?? "", src.hueAppKey ?? "", serviceId, !!on,
+    brightness != null && brightness !== "" ? Number(brightness) : undefined,
+    colorX != null && colorX !== "" ? Number(colorX) : undefined,
+    colorY != null && colorY !== "" ? Number(colorY) : undefined);
+  res.json(r);
+});
+
+
+// --- MQTT-Broker: Status + Topics ---
+app.get("/api/mqtt/status", (_req, res) => {
+  res.json({ ok: true, ...getMqttStatus() });
+});
+app.get("/api/mqtt/topics", (_req, res) => {
+  res.json({ ok: true, topics: getMqttTopics() });
+});
+
+// --- Zugangskontrolle: Protokoll + Reader-Status (Schritt 1) ---
+app.get("/api/access/log", (req, res) => {
+  const limit = req.query?.limit != null ? Number(req.query.limit) : 200;
+  res.json({ ok: true, eintraege: db.getAccessLog(limit) });
+});
+app.get("/api/access/status", (_req, res) => {
+  const reader = getAllReaderStatus().map((r) => {
+    const src = getSources().find((s) => s.id === r.sourceId);
+    return { ...r, label: src?.label ?? r.sourceId };
+  });
+  res.json({ ok: true, reader });
+});
+// Zugangs-Berechtigungen (Whitelist) lesen/speichern.
+app.get("/api/access/entries", (_req, res) => {
+  res.json({ ok: true, entries: db.loadAccessEntries() });
+});
+// Diagnose: rohe functionalChannels eines HCU-Geräts (Namenssuche) – zum Debuggen
+// der Datenstruktur (z.B. wo windowState genau liegt). ?geraet=Namensteil
+app.get("/api/ccu/raw", (req, res) => {
+  const suche = String(req.query?.geraet ?? "").toLowerCase();
+  // Sonderfall: ?gruppen=1 listet alle Gruppen mit Typ + Label + Mitgliederzahl.
+  if (req.query?.gruppen != null) {
+    for (const s of getSources()) {
+      if (s.role !== "ccuHub") continue;
+      const snap = getHubSnapshot(s.id) as any;
+      const groups = snap?.rawState?.groups;
+      if (!groups) continue;
+      const liste = Object.keys(groups).map((gid) => ({
+        id: gid, typ: groups[gid]?.type, label: groups[gid]?.label,
+        metaGroupId: groups[gid]?.metaGroupId ?? null,
+      }));
+      return res.json({ ok: true, anzahl: liste.length, gruppen: liste });
+    }
+    return res.json({ ok: false, error: "Keine HCU-Quelle" });
+  }
+  for (const s of getSources()) {
+    if (s.role !== "ccuHub") continue;
+    const snap = getHubSnapshot(s.id) as any;
+    const state = snap?.rawState;
+    if (!state?.devices) continue;
+    for (const devId of Object.keys(state.devices)) {
+      const dev = state.devices[devId];
+      const label = (dev?.label || "").toLowerCase();
+      if (suche && label.includes(suche)) {
+        return res.json({ ok: true, label: dev.label, functionalChannels: dev.functionalChannels });
+      }
+    }
+  }
+  res.json({ ok: false, error: "Gerät nicht gefunden (Namensteil als ?geraet= übergeben)" });
+});
+app.post("/api/access/entries", (req, res) => {
+  const entries = req.body?.entries;
+  if (!Array.isArray(entries)) return res.status(400).json({ ok: false, error: "entries-Array erwartet" });
+  // Normalisierung. Einträge mit noch leerem Wert werden BEHALTEN (gültiger
+  // Bearbeitungszustand); bei der Auswertung greifen sie ohnehin nicht.
+  const clean = entries.filter((e: any) => e && typeof e === "object").map((e: any) => ({
+    id: typeof e.id === "string" ? e.id : String(Date.now() + Math.random()),
+    art: e.art === "pin" ? "pin" : "card",
+    wert: typeof e.wert === "string" ? e.wert : "",
+    name: typeof e.name === "string" ? e.name.slice(0, 80) : "",
+    aktiv: e.aktiv !== false,
+    wochentage: Array.isArray(e.wochentage) ? e.wochentage.filter((n: any) => Number.isInteger(n) && n >= 0 && n <= 6) : undefined,
+    vonUhr: typeof e.vonUhr === "string" ? e.vonUhr : undefined,
+    bisUhr: typeof e.bisUhr === "string" ? e.bisUhr : undefined,
+    ablauf: typeof e.ablauf === "string" ? e.ablauf : undefined,
+    aktionen: Array.isArray(e.aktionen) ? e.aktionen : [],
+    ausloeseRegeln: Array.isArray(e.ausloeseRegeln) ? e.ausloeseRegeln : undefined,
+  }));
+  db.saveAccessEntries(clean);
+  res.json({ ok: true, entries: clean });
+});
+// Verfügbare (numerische/bool) Datenpunkt-Labels einer Quelle – für die Auswahl,
+// welche persistiert werden sollen.
+app.get("/api/source/datapoints", (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const st = getState();
+  const src = st.sources?.find((s: any) => s.key === sourceId);
+  // Aktuell eingehende Datenpunkte (aus dem Live-State).
+  const aktuell = (src?.values ?? [])
+    .filter((v: any) => typeof v.value === "number" || typeof v.value === "boolean")
+    .filter((v: any) => (v.label ?? "").trim() !== "" && !(v.label === "Leistung" && v.unit === "W"))
+    .map((v: any) => v.label as string);
+  // Bereits jemals persistierte Datenpunkte (aus device_data) – so bleibt die
+  // Auswahl vollständig, auch wenn das Gerät gerade weniger/andere Werte liefert
+  // (z. B. ausgeschalteter Drucker) oder künftig neue Datenpunkte dazukommen.
+  const gespeichert = db.getDeviceDataLabels(sourceId).filter((l) => l !== "_ElektrischW");
+  // Obermenge, alphabetisch.
+  const labels = [...new Set([...aktuell, ...gespeichert])].sort((a, b) => a.localeCompare(b));
+  res.json({ ok: true, labels });
+});
+
+// --- Vallox-Lüftungsanlage: Zustände + Steuerung ---
+app.get("/api/vallox/devices", (_req, res) => {
+  const devices = getAllValloxStates().map((st) => {
+    const src = getSources().find((s) => s.id === st.sourceId);
+    return { ...st, label: src?.label ?? st.sourceId };
+  });
+  res.json({ ok: true, devices });
+});
+app.post("/api/vallox/set", async (req, res) => {
+  const { sourceId, feld, wert } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "vallox");
+  if (!src) return res.status(400).json({ ok: false, error: "Vallox-Quelle nicht gefunden" });
+  const cfg = { extern: src.geraeteMqttExtern, host: src.geraeteMqttHost, port: src.geraeteMqttPort, topic: src.geraeteMqttTopic ?? "vallox" };
+  let r: { ok: boolean; error?: string };
+  if (feld === "power") r = valloxSetPower(cfg, wert === true || wert === "on" || wert === "ON");
+  else if (feld === "speed") r = valloxSetSpeed(cfg, Number(wert));
+  else r = { ok: false, error: "Unbekanntes Feld" };
+  res.json(r);
+});
+
+// --- Luftsensor: Zustände (für Kachel) ---
+app.get("/api/air/devices", (_req, res) => {
+  const devices = getAllAirStates().map((st) => {
+    const src = getSources().find((s) => s.id === st.sourceId);
+    return { ...st, label: src?.label ?? st.sourceId };
+  });
+  res.json({ ok: true, devices });
+});
+
+// --- Elektroauto (evcc): Live-Status + Steuerung ---
+app.get("/api/evcc/devices", (_req, res) => {
+  const devices = getAllEvccStates().map((st) => {
+    const src = getSources().find((s) => s.id === st.sourceId);
+    return { ...st, label: src?.label ?? st.sourceId };
+  });
+  res.json({ ok: true, devices });
+});
+app.post("/api/evcc/mode", async (req, res) => {
+  const { sourceId, mode } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "evcc");
+  if (!src) return res.status(400).json({ ok: false, error: "evcc-Quelle nicht gefunden" });
+  const r = await evccSetMode({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint }, String(mode));
+  res.json(r);
+});
+app.post("/api/evcc/limitsoc", async (req, res) => {
+  const { sourceId, soc } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "evcc");
+  if (!src) return res.status(400).json({ ok: false, error: "evcc-Quelle nicht gefunden" });
+  const r = await evccSetLimitSoc({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint }, Number(soc));
+  res.json(r);
+});
+app.post("/api/evcc/mincurrent", async (req, res) => {
+  const { sourceId, ampere } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "evcc");
+  if (!src) return res.status(400).json({ ok: false, error: "evcc-Quelle nicht gefunden" });
+  res.json(await evccSetMinCurrent({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint }, Number(ampere)));
+});
+app.post("/api/evcc/maxcurrent", async (req, res) => {
+  const { sourceId, ampere } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "evcc");
+  if (!src) return res.status(400).json({ ok: false, error: "evcc-Quelle nicht gefunden" });
+  res.json(await evccSetMaxCurrent({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint }, Number(ampere)));
+});
+app.post("/api/evcc/phases", async (req, res) => {
+  const { sourceId, phasen } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "evcc");
+  if (!src) return res.status(400).json({ ok: false, error: "evcc-Quelle nicht gefunden" });
+  res.json(await evccSetPhases({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint }, Number(phasen)));
+});
+// Ladehistorie (alle Ladevorgänge) einer evcc-Quelle.
+app.get("/api/evcc/sessions", async (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const src = getSources().find((s) => (sourceId ? s.id === sourceId : s.role === "evcc") && s.role === "evcc");
+  if (!src) return res.json({ ok: false, error: "Keine evcc-Quelle", sessions: [] });
+  const r = await readEvccSessions({ host: src.evccHost ?? "", loadpoint: src.evccLoadpoint });
+  res.json(r);
+});
+
+// --- CO₂ (ENTSO-E): Token-Konfiguration + Bilanz ---
+app.get("/api/co2/config", (_req, res) => {
+  const token = getSources().find((s) => s.role === "entsoe" && s.enabled !== false)?.entsoeToken ?? "";
+  const intens = getLetzteCo2Intensitaet();
+  const uebersicht = db.getCo2Uebersicht();
+  res.json({ ok: true, tokenGesetzt: token !== "", aktuelleIntensitaet: intens?.gPerKwh ?? null, stand: intens?.ts ?? null, daten: uebersicht });
+});
+app.post("/api/co2/config", (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  db.setSettingRaw("entsoeToken", token);
+  res.json({ ok: true });
+});
+app.get("/api/co2/bilanz", (req, res) => {
+  const ebene = req.query?.ebene === "monat" ? "monat" : "jahr";
+  const jahr = req.query?.jahr != null ? Number(req.query.jahr) : new Date().getFullYear();
+  const monat = req.query?.monat != null ? Number(req.query.monat) : new Date().getMonth();
+  const prefix = ebene === "jahr" ? String(jahr) : `${jahr}-${String(monat + 1).padStart(2, "0")}`;
+  res.json({ ok: true, ...db.getCo2Summe(prefix) });
+});
+// Rückwirkendes Befüllen der CO₂-Bilanz aus ENTSO-E-Historie (wie Börsenpreise
+// nachladbar). Holt die historische Netzintensität und verrechnet sie mit dem
+// bereits gespeicherten Viertelstunden-Netzbezug.
+app.post("/api/co2/backfill", async (req, res) => {
+  const token = getSources().find((s) => s.role === "entsoe" && s.enabled !== false)?.entsoeToken ?? "";
+  if (!token) return res.status(400).json({ ok: false, error: "Kein ENTSO-E-Token konfiguriert" });
+  const tage = Math.max(1, Math.min(366, Number(req.body?.tage) || 30));
+  const bis = new Date();
+  const von = new Date(bis.getTime() - tage * 24 * 3600 * 1000);
+  try {
+    // ENTSO-E in Monatsscheiben abrufen (robuster als ein Riesen-Request).
+    const werte = new Map<string, number>();
+    let cursor = new Date(von);
+    while (cursor < bis) {
+      const scheibeBis = new Date(Math.min(bis.getTime(), cursor.getTime() + 30 * 24 * 3600 * 1000));
+      const r = await holeCo2Historie({ token }, cursor, scheibeBis);
+      if (r.ok && r.werte) for (const [k, v] of r.werte) werte.set(k, v);
+      cursor = scheibeBis;
+    }
+    if (werte.size === 0) return res.json({ ok: false, error: "Keine Intensitätsdaten von ENTSO-E erhalten" });
+    // Historischen Netzbezug je Viertelstunde holen und verrechnen.
+    const p = (n: number) => String(n).padStart(2, "0");
+    const isoTs = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    const vs = db.getViertelstunden(isoTs(von), isoTs(bis));
+    let geschrieben = 0;
+    for (const v of vs) {
+      const stundenKey = v.ts.slice(0, 13); // YYYY-MM-DDTHH
+      const intens = werte.get(stundenKey);
+      if (intens == null) continue;
+      const ts = v.ts.length === 16 ? `${v.ts}:00` : v.ts;
+      db.saveCo2(ts, intens, v.bezogen ?? 0);
+      geschrieben++;
+    }
+    res.json({ ok: true, intensitaetStunden: werte.size, geschriebeneViertelstunden: geschrieben });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message ?? "Backfill fehlgeschlagen" });
+  }
+});
+
+// --- Jahres-/Monatsrückblick ("Energie-Wrapped") ---
+app.get("/api/rueckblick", async (req, res) => {
+  const ebene = req.query?.ebene === "monat" ? "monat" : "jahr";
+  const jahr = req.query?.jahr != null ? Number(req.query.jahr) : new Date().getFullYear();
+  const monat = req.query?.monat != null ? Number(req.query.monat) : new Date().getMonth();
+  // evcc-Sessions holen (falls eine evcc-Quelle existiert).
+  let sessions: Array<{ created: string; chargedEnergy: number; solarPercentage?: number }> = [];
+  const evccSrc = getSources().find((s) => s.role === "evcc");
+  if (evccSrc) {
+    const r = await readEvccSessions({ host: evccSrc.evccHost ?? "", loadpoint: evccSrc.evccLoadpoint });
+    if (r.ok) sessions = r.sessions;
+  }
+  // evcc kennt oft Ladedaten aus der Zeit VOR FLUX. Für einen konsistenten
+  // Rückblick (Auto darf den gemessenen Gesamtverbrauch nicht übersteigen) nur
+  // Ladungen an Tagen zählen, für die FLUX überhaupt Verbrauchsdaten (history) hat.
+  {
+    const fluxTage = new Set(db.getAllHistory().map((h) => h.date));
+    if (fluxTage.size > 0) sessions = sessions.filter((s) => {
+      const d = new Date(s.created); if (isNaN(d.getTime())) return false;
+      const p = (n: number) => String(n).padStart(2, "0");
+      return fluxTage.has(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
+    });
+  }
+  // Verfügbare Jahre aus der Historie.
+  const jahre = [...new Set(db.getAllHistory().map((h) => Number(h.date.slice(0, 4))))].filter((y) => Number.isFinite(y)).sort((a, b) => b - a);
+  const kennzahlen = berechneRueckblick(ebene, jahr, monat, sessions);
+
+  // --- Verbrauchsaufteilung in Haushalt / Wärmepumpe / Auto (mit Autarkie) ---
+  try {
+    // Zeitbereich als Tage.
+    const von = ebene === "jahr" ? `${jahr}-01-01` : `${jahr}-${String(monat + 1).padStart(2, "0")}-01`;
+    const bisD = ebene === "jahr" ? new Date(jahr, 11, 31) : new Date(jahr, monat + 1, 0);
+    const bis = `${bisD.getFullYear()}-${String(bisD.getMonth() + 1).padStart(2, "0")}-${String(bisD.getDate()).padStart(2, "0")}`;
+
+    // Wärmepumpe: exakt aus WP-KPI (energieKwh gesamt, pvKwh davon aus PV).
+    const wp = aggregateWpKpi(von, bis);
+    // Warmwasser-Aufteilung (WP-Anteil vs. Heizstab vs. Solar).
+    const ww = computeWwKpi(von, bis);
+    const wpKwh = wp.energieKwh ?? 0;
+    const wpAutark = wpKwh > 0 ? Math.min(100, (wp.pvKwh ?? 0) / wpKwh * 100) : 0;
+
+    // Auto: exakt aus evcc-Sessions (geladene kWh + gewichteter Sonnenanteil).
+    let autoKwh = 0, autoSonne = 0;
+    // Sessions sind bereits global auf FLUX-Tage gefiltert (siehe oben).
+    for (const s of sessions) {
+      const d = new Date(s.created);
+      const passt = ebene === "jahr" ? d.getFullYear() === jahr : (d.getFullYear() === jahr && d.getMonth() === monat);
+      if (!passt) continue;
+      autoKwh += s.chargedEnergy; autoSonne += s.chargedEnergy * ((s.solarPercentage ?? 0) / 100);
+    }
+    const autoAutark = autoKwh > 0 ? (autoSonne / autoKwh) * 100 : 0;
+
+    // Einzelgrößen der Wärmepumpe (nach Betriebsmodus getrennt) und des Heizstabs.
+    const wpHeizKwh = wp.energieHeizKwh ?? 0;      // WP für Heizen
+    const wpWwKwh = wp.energieWwKwh ?? 0;          // WP für Warmwasser
+    const heizstabWwKwh = ww.energieHeizstabKwh ?? 0; // Heizstab (eigener Zähler)
+    const warmwasserKwh = wpWwKwh + heizstabWwKwh; // Warmwasser gesamt
+
+    // PV-Deckung je WP-Betriebsart anteilig an der WP-Gesamt-PV-Deckung.
+    const wpPv = wp.pvKwh ?? 0;
+    const heizPv = wpKwh > 0 ? wpPv * (wpHeizKwh / wpKwh) : 0;
+    const wpWwPv = wpKwh > 0 ? wpPv * (wpWwKwh / wpKwh) : 0;
+    // Heizstab ohne eigene PV-Zuordnung: über die Gesamt-Autarkie genaehert.
+    const gesamtAutarkie = kennzahlen.verbrauch > 0 ? kennzahlen.eigenverbrauch / kennzahlen.verbrauch : 0;
+    const heizstabPv = heizstabWwKwh * gesamtAutarkie;
+    const warmwasserPv = wpWwPv + heizstabPv;
+
+    // Haushalt-Rest = Gesamt - Heizen - Warmwasser(inkl. Heizstab) - Auto.
+    const haushaltKwh = Math.max(0, kennzahlen.verbrauch - wpHeizKwh - warmwasserKwh - autoKwh);
+    const haushaltEigen = Math.max(0, kennzahlen.eigenverbrauch - heizPv - warmwasserPv - autoSonne);
+    const aut = (eigen: number, kwh: number) => kwh > 0 ? Math.min(100, eigen / kwh * 100) : 0;
+
+    kennzahlen.bereiche = {
+      heizen: { kwh: wpHeizKwh, autarkie: aut(heizPv, wpHeizKwh) },
+      warmwasser: {
+        kwh: warmwasserKwh, autarkie: aut(warmwasserPv, warmwasserKwh),
+        wpKwh: wpWwKwh, heizstabKwh: heizstabWwKwh,
+      },
+      auto: { kwh: autoKwh, autarkie: autoAutark },
+      haushalt: { kwh: haushaltKwh, autarkie: aut(haushaltEigen, haushaltKwh) },
+    };
+  } catch { /* Bereiche optional */ }
+
+  // Echte CO₂-Bilanz aus co2_log, falls für den Zeitraum aufgezeichnet.
+  const prefix = ebene === "jahr" ? String(jahr) : `${jahr}-${String(monat + 1).padStart(2, "0")}`;
+  const co2 = db.getCo2Summe(prefix);
+  if (co2.punkte > 0) {
+    // Vermiedene Emissionen: Eigenverbrauch × durchschnittliche Netzintensität des
+    // Zeitraums (das wäre der CO₂-Ausstoß, wenn dieselbe Energie aus dem Netz käme).
+    kennzahlen.co2VermiedenKg = (kennzahlen.eigenverbrauch * co2.schnittIntensitaet) / 1000;
+    kennzahlen.co2Geschaetzt = false;
+    (kennzahlen as any).co2NetzEmissionenKg = co2.emissionenG / 1000;
+    (kennzahlen as any).co2SchnittIntensitaet = Math.round(co2.schnittIntensitaet);
+  }
+  res.json({ ok: true, jahre, kennzahlen });
+});
+// Luftsensor-Tagesverlauf (persistierte device_data) für einen Zeitbereich.
+app.get("/api/air/verlauf", (req, res) => {
+  const von = typeof req.query?.von === "string" ? req.query.von : "";
+  const bis = typeof req.query?.bis === "string" ? req.query.bis : "";
+  // Ersten Luftsensor nehmen (falls mehrere existieren: optional per sourceId).
+  const wunschId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const airSrc = getSources().find((s) => s.role === "airSensor" && (!wunschId || s.id === wunschId));
+  if (!airSrc) return res.json({ ok: false, error: "Kein Luftsensor konfiguriert", punkte: [] });
+  const rows = db.getDeviceData(airSrc.id, von, bis);
+  // Nach Zeitpunkt gruppieren: je ts ein Objekt mit den vier Messwerten.
+  const proTs = new Map<string, any>();
+  for (const r of rows) {
+    if (!proTs.has(r.ts)) proTs.set(r.ts, { ts: r.ts });
+    proTs.get(r.ts)[r.label] = r.value;
+  }
+  const punkte = [...proTs.values()].sort((a, b) => a.ts.localeCompare(b.ts));
+  res.json({ ok: true, sourceId: airSrc.id, label: airSrc.label, punkte });
+});
+
+// --- Prusa 3D-Drucker: Zustände + verlinkter Schalter (für Kachel) ---
+app.get("/api/prusa/devices", (_req, res) => {
+  const fullState = getState();
+  const devices = getAllPrusaStates().map((st) => {
+    const src = getSources().find((s) => s.id === st.sourceId);
+    // Die Schaltbarkeit ist bereits im State-Objekt des Druckers hinterlegt
+    // (switchable + switchVia + switchState), inkl. der Auflösung über eine
+    // verlinkte Leistungsquelle (powerSourceId). Diese direkt nutzen.
+    const stateSrc = fullState.sources?.find((x: any) => x.key === st.sourceId) as any;
+    let switchSourceId: string | undefined;
+    let switchState: boolean | null | undefined;
+    if (stateSrc?.switchable && stateSrc?.switchVia) {
+      switchSourceId = stateSrc.switchVia;
+      switchState = stateSrc.switchState ?? null;
+    }
+    return { ...st, label: src?.label ?? st.sourceId, switchSourceId, switchState };
+  });
+  res.json({ ok: true, devices });
+});
+
+// --- Mitsubishi-Klimaanlagen: Zustände + Steuerung ---
+app.get("/api/klima/devices", (_req, res) => {
+  const devices = getAllAcStates().map((st) => {
+    const src = getSources().find((s) => s.id === st.sourceId);
+    return { ...st, label: src?.label ?? st.sourceId };
+  });
+  res.json({ ok: true, devices });
+});
+app.post("/api/klima/set", async (req, res) => {
+  const { sourceId, feld, wert } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "mitsubishiAc");
+  if (!src) return res.status(400).json({ ok: false, error: "Klima-Quelle nicht gefunden" });
+  const cfg = { extern: src.geraeteMqttExtern, host: src.geraeteMqttHost, port: src.geraeteMqttPort, topic: src.geraeteMqttTopic ?? "mitsubishi2mqtt" };
+  let r: { ok: boolean; error?: string };
+  if (feld === "power") {
+    const cur = getAcState(src.id);
+    r = acSetPower(cfg, wert === true || wert === "ON" || wert === "on", cur?.mode);
+  } else if (feld === "mode") r = acSetMode(cfg, String(wert));
+  else if (feld === "temp") r = acSetTemp(cfg, Number(wert));
+  else if (feld === "fan") r = acSetFan(cfg, String(wert));
+  else if (feld === "vane") r = acSetVane(cfg, String(wert));
+  else if (feld === "wideVane") r = acSetWideVane(cfg, String(wert));
+  else r = { ok: false, error: "Unbekanntes Feld" };
+  res.json(r);
+});
+
+// --- SecuritySpy: Kameraliste + Live-Bild-Proxy ---
+app.get("/api/securityspy/cameras", (_req, res) => {
+  // Server-Infos je Quelle mitgeben (Name/Version), plus alle Kameras.
+  const server: Record<string, unknown> = {};
+  for (const s of getSources()) {
+    if (s.role !== "securitySpy") continue;
+    const snap = getSsSnapshot(s.id);
+    if (snap) server[s.id] = { ok: snap.ok, serverName: snap.serverName, version: snap.version, error: snap.error };
+  }
+  res.json({ ok: true, cameras: getAllSsCameras(), server });
+});
+// Live-Bild einer Kamera proxen: die Zugangsdaten bleiben serverseitig, der
+// Browser bekommt nur das JPEG. Aufruf: /api/securityspy/image?sourceId=..&cam=N
+app.get("/api/securityspy/image", async (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const cam = Number(req.query?.cam);
+  const src = getSources().find((s) => s.id === sourceId && s.role === "securitySpy");
+  if (!src || !Number.isFinite(cam)) return res.status(400).end();
+  const r = await fetchCameraImage({ host: src.ssHost ?? "", port: src.ssPort, user: src.ssUser, pass: src.ssPass }, cam);
+  if (!r.ok || !r.data) return res.status(502).end();
+  res.setHeader("Content-Type", r.contentType ?? "image/jpeg");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(r.data);
+});
+// Live-MJPEG-Stream einer Kamera proxen. Aufruf: /api/securityspy/stream?sourceId=..&cam=N
+app.get("/api/securityspy/stream", (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const cam = Number(req.query?.cam);
+  const src = getSources().find((s) => s.id === sourceId && s.role === "securitySpy");
+  if (!src || !Number.isFinite(cam)) return res.status(400).end();
+  proxyCameraStream({ host: src.ssHost ?? "", port: src.ssPort, user: src.ssUser, pass: src.ssPass }, cam, res, req);
+});
+// Aufnahmenliste einer SecuritySpy-Quelle (optional gefiltert nach Kamera/Alter).
+app.get("/api/securityspy/recordings", async (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const src = getSources().find((s) => s.id === sourceId && s.role === "securitySpy")
+    ?? getSources().find((s) => s.role === "securitySpy");
+  if (!src) return res.status(400).json({ ok: false, error: "Keine SecuritySpy-Quelle" });
+  const cfg = { host: src.ssHost ?? "", port: src.ssPort, user: src.ssUser, pass: src.ssPass };
+  const cam = req.query?.cam != null && req.query.cam !== "" ? Number(req.query.cam) : undefined;
+  const tage = req.query?.tage != null ? Number(req.query.tage) : 7;
+  let r: { ok: boolean; error?: string; recordings: unknown[] };
+  if (cam != null) {
+    r = await fetchRecordings(cfg, { cameraNum: cam, tage });
+  } else {
+    // "alle": jede bekannte Kamera einzeln abfragen und zusammenführen, weil
+    // SecuritySpy ohne cameraNum keine zuverlässige Liste liefert.
+    const snap = getSsSnapshot(src.id);
+    const nummern = (snap?.cameras ?? []).map((c) => c.number);
+    r = await fetchAllRecordings(cfg, nummern, { tage });
+  }
+  res.json({ ok: r.ok, error: r.error, sourceId: src.id, recordings: r.recordings });
+});
+// Eine Aufnahme abspielen/herunterladen (Proxy mit Range-Support fürs Spulen).
+app.get("/api/securityspy/recording", (req, res) => {
+  const sourceId = typeof req.query?.sourceId === "string" ? req.query.sourceId : "";
+  const href = typeof req.query?.href === "string" ? req.query.href : "";
+  const src = getSources().find((s) => s.id === sourceId && s.role === "securitySpy");
+  if (!src || !href || !href.includes("getfile")) return res.status(400).end();
+  proxyRecording({ host: src.ssHost ?? "", port: src.ssPort, user: src.ssUser, pass: src.ssPass }, href, res, req);
+});
+
+// --- Homematic CCU: Untergeräte-Liste + Datenpunkt schalten ---
+app.get("/api/ccu/devices", (_req, res) => {
+  // Untergeräte + Alarm-Zustand + Automatisierungen je CCU-Quelle.
+  const alarmProQuelle: Record<string, unknown> = {};
+  const autoProQuelle: Record<string, unknown> = {};
+  for (const s of getSources()) {
+    if (s.role !== "ccuHub") continue;
+    const snap = getHubSnapshot(s.id);
+    if (snap?.alarm) alarmProQuelle[s.id] = snap.alarm;
+    if (snap?.automatisierungen) autoProQuelle[s.id] = snap.automatisierungen;
+  }
+  res.json({ ok: true, devices: getAllHubSubDevices(), alarm: alarmProQuelle, automatisierungen: autoProQuelle });
+});
+app.post("/api/ccu/switch", async (req, res) => {
+  const { sourceId, iseId, wert } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "ccuHub");
+  if (!src) return res.status(400).json({ ok: false, error: "CCU-Quelle nicht gefunden" });
+  if (typeof iseId !== "string") return res.status(400).json({ ok: false, error: "iseId erwartet" });
+  // wert: boolean (Schalter), Zahl 0..100 (Rollladen/Dimmer-Position) oder "stop".
+  let w: number | boolean | "stop";
+  if (wert === "stop") w = "stop";
+  else if (typeof wert === "boolean") w = wert;
+  else if (wert === "true") w = true;
+  else if (wert === "false") w = false;
+  else w = Number(wert);
+  const r = await schalteHub({ hubTyp: src.hubTyp, host: src.ccuHost ?? "", port: src.ccuPort, hcuAuthToken: src.hcuAuthToken, hcuSgtin: src.hcuSgtin }, iseId, w);
+  res.json(r);
+});
+// Homematic Alarm-Modus setzen (unscharf/anwesenheit/vollschutz).
+app.post("/api/ccu/alarm", async (req, res) => {
+  const { sourceId, modus } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "ccuHub");
+  if (!src) return res.status(400).json({ ok: false, error: "CCU-Quelle nicht gefunden" });
+  if (modus !== "unscharf" && modus !== "anwesenheit" && modus !== "vollschutz") {
+    return res.status(400).json({ ok: false, error: "modus muss unscharf|anwesenheit|vollschutz sein" });
+  }
+  const r = await setAlarmModus({ hubTyp: src.hubTyp, host: src.ccuHost ?? "", port: src.ccuPort, hcuAuthToken: src.hcuAuthToken, hcuSgtin: src.hcuSgtin }, modus);
+  res.json(r);
+});
+// Sirene manuell auslösen/beenden (sicherheitskritisch – Frontend fragt nach).
+app.post("/api/ccu/sirene", async (req, res) => {
+  const { sourceId, ausloesen } = req.body ?? {};
+  const src = getSources().find((s) => s.id === sourceId && s.role === "ccuHub");
+  if (!src) return res.status(400).json({ ok: false, error: "CCU-Quelle nicht gefunden" });
+  const r = await loeseSirenAus({ hubTyp: src.hubTyp, host: src.ccuHost ?? "", port: src.ccuPort, hcuAuthToken: src.hcuAuthToken, hcuSgtin: src.hcuSgtin }, !!ausloesen);
+  res.json(r);
 });
 
 // --- Wasserverbrauch ---
@@ -1830,6 +2538,80 @@ app.post("/api/lppcontrol/test", async (req, res) => {
 app.get("/api/lppcontrol/erkennen", (_req, res) => {
   const vorschlag = erkenneInverterAusQuellen(getSources());
   res.json({ ok: true, inverter: vorschlag });
+});
+
+// --- Anomalie-Erkennung (eigenständiges Subsystem) ---
+app.get("/api/anomalie/status", (_req, res) => {
+  // Objektlisten für die Konfigurations-UI: überwachbare Verbraucher (für
+  // Baseline-Übersteuerung und Urlaubs-Auswahl) und Wasserzähler.
+  const verbraucher = getSources()
+    .filter((s) => s.role === "consumer" && s.enabled !== false)
+    .map((s) => ({ id: s.id, label: s.label }));
+  const wasserzaehler = getSources()
+    .filter((s) => s.role === "water" && s.enabled !== false)
+    .map((s) => ({ id: s.id, label: s.label }));
+  res.json({
+    ok: true,
+    status: getAnomalieStatus(),
+    config: getAnomalieConfig(),
+    historie: getAnomalieHistorie(100),
+    objekte: { verbraucher, wasserzaehler },
+    baselineTransparenz: getBaselineTransparenz(verbraucher),
+    feedbackProtokoll: getAnomalieFeedbackProtokoll(50),
+    vorschlaege: getAnomalieVorschlaege(),
+  });
+});
+// Stufe 4: einen Verbesserungsvorschlag per Ein-Klick übernehmen.
+app.post("/api/anomalie/vorschlag", (req, res) => {
+  const id = req.body?.id;
+  if (typeof id !== "string") return res.status(400).json({ ok: false, error: "id erwartet" });
+  const ok = wendeVorschlagAn(id);
+  res.json({ ok, config: getAnomalieConfig(), vorschlaege: getAnomalieVorschlaege() });
+});
+app.post("/api/anomalie/config", (req, res) => {
+  const b = req.body ?? {};
+  const cur = getAnomalieConfig();
+  const next = { ...cur };
+  if (typeof b.enabled === "boolean") next.enabled = b.enabled;
+  if (b.vorschlagSchwelle != null && Number.isFinite(Number(b.vorschlagSchwelle))) next.vorschlagSchwelle = Math.max(2, Number(b.vorschlagSchwelle));
+  if (Array.isArray(b.detektoren)) {
+    next.detektoren = cur.detektoren.map((d) => {
+      const patch = b.detektoren.find((x: any) => x?.id === d.id);
+      if (!patch) return d;
+      return {
+        ...d,
+        enabled: typeof patch.enabled === "boolean" ? patch.enabled : d.enabled,
+        params: { ...d.params, ...(patch.params && typeof patch.params === "object" ? patch.params : {}) },
+        ignoriert: Array.isArray(patch.ignoriert) ? patch.ignoriert.filter((s: any) => typeof s === "string") : d.ignoriert,
+        erzwungen: Array.isArray(patch.erzwungen) ? patch.erzwungen.filter((s: any) => typeof s === "string") : d.erzwungen,
+        urlaubStart: patch.urlaubStart !== undefined ? (typeof patch.urlaubStart === "string" ? patch.urlaubStart : null) : d.urlaubStart,
+        urlaubEnde: patch.urlaubEnde !== undefined ? (typeof patch.urlaubEnde === "string" ? patch.urlaubEnde : null) : d.urlaubEnde,
+        ueberwachteVerbraucher: Array.isArray(patch.ueberwachteVerbraucher) ? patch.ueberwachteVerbraucher.filter((s: any) => typeof s === "string") : d.ueberwachteVerbraucher,
+        ueberwacheWasser: typeof patch.ueberwacheWasser === "boolean" ? patch.ueberwacheWasser : d.ueberwacheWasser,
+      };
+    });
+  }
+  saveAnomalieConfig(next);
+  res.json({ ok: true, config: getAnomalieConfig() });
+});
+app.post("/api/anomalie/quittieren", (req, res) => {
+  const id = req.body?.id;
+  if (typeof id !== "string") return res.status(400).json({ ok: false, error: "id erwartet" });
+  const ok = quittiereAnomalie(id);
+  res.json({ ok, status: getAnomalieStatus() });
+});
+// Feedback zu einer Anomalie geben (Stufe 3): "richtig" | "unwichtig" | "fehlalarm".
+// Quittiert zugleich, wenn die Anomalie noch aktiv ist. Funktioniert auch für
+// bereits beendete Anomalien (in der Historie).
+app.post("/api/anomalie/feedback", (req, res) => {
+  const id = req.body?.id;
+  const feedback = req.body?.feedback;
+  if (typeof id !== "string") return res.status(400).json({ ok: false, error: "id erwartet" });
+  if (feedback !== "richtig" && feedback !== "unwichtig" && feedback !== "fehlalarm") {
+    return res.status(400).json({ ok: false, error: "feedback muss richtig|unwichtig|fehlalarm sein" });
+  }
+  const ok = bewerteAnomalie(id, feedback);
+  res.json({ ok, status: getAnomalieStatus(), historie: getAnomalieHistorie(100), feedbackProtokoll: getAnomalieFeedbackProtokoll(50) });
 });
 
 // --- §14a-Überwachung (LPC): SteuVE-Bezug gegen Limit prüfen (nur Anzeige) ---
@@ -2151,7 +2933,8 @@ app.get("/api/room/day", (req, res) => {
   const OHNE = "Ohne Raum";
   // Alle Consumer-Quellen dieses Raums (untergeordnete Leistungsquellen außen vor).
   const geraete = getSources().filter(
-    (s) => s.role === "consumer" && !s.subordinateOf && (s.room?.trim() || OHNE) === (room || OHNE)
+    (s) => (s.role === "consumer" || s.role === "evcc" || s.role === "prusa"
+      || s.role === "vallox" || s.role === "mitsubishiAc") && !s.subordinateOf && (s.room?.trim() || OHNE) === (room || OHNE)
   );
   const series = geraete.map((g) => {
     const values = new Array(96).fill(0);
@@ -2186,7 +2969,9 @@ app.get("/api/consumers/day", (req, res) => {
   // deaktivierte, damit die historische Tabelle dieselbe Geräteliste zeigt wie
   // die Live-Ansicht. Untergeordnete Leistungsquellen werden ausgelassen.
   const geraete = getSources().filter(
-    (s) => (s.role === "consumer" || s.role === "batteryIn" || s.role === "batteryOut" || s.role === "acBattery") && !s.subordinateOf
+    (s) => (s.role === "consumer" || s.role === "batteryIn" || s.role === "batteryOut"
+      || s.role === "acBattery" || s.role === "evcc"
+      || s.role === "prusa" || s.role === "vallox" || s.role === "mitsubishiAc") && !s.subordinateOf
   );
   const series = geraete.map((g) => {
     const values = new Array(96).fill(0);
@@ -2503,7 +3288,7 @@ app.post("/api/sources/test", async (req, res) => {
     if ((src.connection ?? "rest") === "mqtt") {
       // MQTT: kurz verbinden und auf eine Nachricht warten, dann die Felder aus
       // der Payload extrahieren (analog zur laufenden Auswertung).
-      if (!src.mqttUrl || !src.mqttTopic) {
+      if (!src.mqttUrl || !src.geraeteMqttTopic) {
         res.status(400).json({ ok: false, error: "mqttUrl und mqttTopic erwartet" });
         return;
       }
@@ -2520,6 +3305,18 @@ app.post("/api/sources/test", async (req, res) => {
       res.json({ ok: true, ...result, raw });
       return;
     }
+    // Geräte-spezifische Rollen: passendes Poll aufrufen und Erreichbarkeit melden.
+    if (src.role === "airSensor") {
+      const st = await pollAir({ host: src.airHost ?? "" });
+      if (st.ok) return void res.json({ ok: true, values: { pm25: st.pm25, pm10: st.pm10, temperatur: st.temperature, luftdruck: st.pressure } });
+      return void res.json({ ok: false, error: st.error ?? "Sensor nicht erreichbar" });
+    }
+    if (src.role === "prusa") {
+      const st = await pollPrusaTest({ host: src.prusaHost ?? "", auth: src.prusaAuth ?? "digest", apiKey: src.prusaApiKey, user: src.prusaUser, pass: src.prusaPass });
+      if (st.ok) return void res.json({ ok: true, values: { status: st.state, druck: st.jobDatei, fortschritt: st.jobFortschritt } });
+      return void res.json({ ok: false, error: st.error ?? "Drucker nicht erreichbar" });
+    }
+
     if (!src.url) {
       res.status(400).json({ ok: false, error: "source mit url erwartet" });
       return;
@@ -2764,6 +3561,50 @@ pvanlagen.startPrognoseScheduler();
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`FLUX läuft auf http://localhost:${PORT}`);
   db.addLog(db.LOG_LEVELS.info, "server", `FLUX gestartet auf Port ${PORT}`);
+  // Eingebauten MQTT-Broker (Aedes) auf Port 1883 starten. Geräte publizieren
+  // dort ihren Zustand; die Topics sind auf der Statusseite einsehbar.
+  startMqttBroker(1883).then(() => db.addLog(db.LOG_LEVELS.info, "mqtt", "MQTT-Broker gestartet auf Port 1883"))
+    .catch((e: any) => db.addLog(db.LOG_LEVELS.warn, "mqtt", `MQTT-Broker-Start fehlgeschlagen: ${e?.message ?? e}`));
+  // Zugangskontrolle: MQTT-Reader-Empfang initialisieren (nach dem Broker-Start).
+  try { initAccessReader(() => getSources()); } catch (e: any) { db.addLog(db.LOG_LEVELS.warn, "access", `Reader-Init fehlgeschlagen: ${e?.message ?? e}`); }
+  // Zugangskontrolle Schritt 2: Whitelist-Auswertung + Aktions-/Regel-Runner.
+  try {
+    setAccessAktionRunner((action) => runAccessAction(action, getSources()));
+    setAccessRegelTrigger((ruleId) => { void manualTrigger(ruleId, true); });
+    initAccessControl();
+  } catch (e: any) { db.addLog(db.LOG_LEVELS.warn, "access", `Zugangskontroll-Init fehlgeschlagen: ${e?.message ?? e}`); }
+  // Externe Reader-Broker regelmäßig auf neue Ereignisse prüfen (der lokale
+  // Broker liefert über den Listener sofort; extern wird gepollt).
+  setInterval(() => { try { pollExterneReader(); } catch { /* ignore */ } }, 2000);
+
+  // CO₂-Intensität (ENTSO-E) stündlich abrufen und je Viertelstunde mit dem
+  // aktuellen Netzbezug verrechnen. Nur wenn ein Token konfiguriert ist.
+  const co2Abruf = async () => {
+    const token = getSources().find((s) => s.role === "entsoe" && s.enabled !== false)?.entsoeToken ?? "";
+    if (!token) return;
+    try {
+      const r = await holeCo2Intensitaet({ token });
+      if (r.ok && r.gPerKwh != null) setLetzteCo2Intensitaet(r.gPerKwh);
+    } catch { /* ignore */ }
+  };
+  co2Abruf();
+  setInterval(co2Abruf, 60 * 60 * 1000); // stündlich
+  // Verrechnung: alle 15 min den Netzbezug der letzten Viertelstunde mit der
+  // zuletzt bekannten Intensität multiplizieren und in co2_log ablegen.
+  setInterval(() => {
+    try {
+      const intens = getLetzteCo2Intensitaet();
+      if (!intens) return;
+      const bezugW = Math.max(0, pollerLive.gridPower ?? 0); // nur Bezug (positiv)
+      const kwh = (bezugW / 1000) * 0.25; // Viertelstunde
+      const now = new Date();
+      // auf Viertelstunde abrunden
+      now.setMinutes(Math.floor(now.getMinutes() / 15) * 15, 0, 0);
+      const p = (n: number) => String(n).padStart(2, "0");
+      const ts = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}:00`;
+      db.saveCo2(ts, intens.gPerKwh, kwh);
+    } catch { /* ignore */ }
+  }, 15 * 60 * 1000);
   // EEBUS-Konfiguration laden und periodische Prüfung (ablaufende Limits,
   // Heartbeat-Timeout) starten.
   try { loadEebusConfig(db.getSettingRaw("eebusConfig") ?? null); } catch { /* ignore */ }
@@ -2775,6 +3616,10 @@ app.listen(PORT, "0.0.0.0", () => {
   // eingeht oder wieder aufgehoben wird. notifyTransition feuert nur bei der
   // Flanke und in beide Richtungen.
   setLimitFlankeHandler((useCase, aktiv, wert, dauerSek) => {
+    // Je Paragraph prüfen, ob Benachrichtigungen gewünscht sind.
+    const notify = db.loadNotifySettings();
+    if (useCase === "lpc" && notify.notifyLpc === false) return;
+    if (useCase !== "lpc" && notify.notifyLpp === false) return;
     const para = useCase === "lpc" ? "§14a" : "§9";
     const art = useCase === "lpc" ? "Bezugsbegrenzung" : "Einspeisebegrenzung";
     const key = `eebus_limit_${useCase}`;
@@ -2783,11 +3628,11 @@ app.listen(PORT, "0.0.0.0", () => {
       key, aktiv,
       () => ({
         text: `Netzbetreiber-Eingriff aktiv: ${art} auf ${wert} W${dauerTxt}.`,
-        opts: { title: `${para} Drosselung aktiv`, priority: 4, tags: ["warning"] },
+        opts: { title: `${para} Drosselung aktiv`, priority: 4, tags: ["warning"], triggerId: `transition:eebus_${useCase}` },
       }),
       () => ({
         text: `${art} nach ${para} wurde aufgehoben. Normalbetrieb.`,
-        opts: { title: `${para} Drosselung aufgehoben`, priority: 3, tags: ["white_check_mark"] },
+        opts: { title: `${para} Drosselung aufgehoben`, priority: 3, tags: ["white_check_mark"], triggerId: `transition:eebus_${useCase}` },
       }),
     );
   });

@@ -20,7 +20,25 @@ import type {
 } from "./types.js";
 import type { SourceConfig } from "./sources.js";
 import { switchSource, getSwitchState, resolveSwitchChannel } from "./switch.js";
+import { getHueSnapshot, schalteHueLicht } from "./hue.js";
+import { getHubSnapshot, schalteCcuDatenpunkt, schalteHub, setAlarmModus } from "./ccu.js";
+import { hatSsEreignis } from "./securityspy.js";
+import { getAcState, acSetPower, acSetTemp, acSetMode } from "./mitsubishiac.js";
+import { getValloxState, valloxSetPower, valloxSetSpeed } from "./vallox.js";
+import { getAirState } from "./airsensor.js";
+import { getPrusaState } from "./prusa.js";
+import { getEvccState } from "./evcc.js";
+import { evccSetMode, evccSetLimitSoc } from "./evcc.js";
 import { sendNtfy } from "./notify.js";
+// Regel-Benachrichtigungen respektieren den thematischen Schalter notifyRules.
+function sendRuleNtfy(text: string, opts: Parameters<typeof sendNtfy>[1], ruleId?: string): void {
+  const notify = db.loadNotifySettings();
+  if (notify.notifyRules === false) return;
+  // triggerId je Regel für das Kanal-Routing (sofern nicht schon gesetzt).
+  const o = { ...(opts ?? {}) };
+  if (ruleId && !o.triggerId) o.triggerId = `rule:${ruleId}`;
+  void sendNtfy(text, o);
+}
 import { setMarstekModbusForce, setMarstekModbusWorkMode, isMarstekWorkMode } from "./marstekModbus.js";
 
 // Momentaufnahme aller für Regeln nutzbaren Größen.
@@ -223,9 +241,9 @@ async function activateRule(rule: AutomationRule, sources: SourceConfig[], m: Ru
   rt.watchedSwitches = await captureWatchedSwitches(rule, sources);
   persistActiveState();
   if (rule.notifyOnActivate) {
-    void sendNtfy(`Regel „${rule.name}" wurde aktiviert.`, {
+    sendRuleNtfy(`Regel „${rule.name}" wurde aktiviert.`, {
       title: "HEMS-Automatisierung", priority: 3, tags: ["gear"],
-    });
+    }, rule.id);
   }
 }
 
@@ -444,6 +462,105 @@ export async function manualTrigger(ruleId: string, start: boolean): Promise<boo
 // eine Ebene höher).
 function evalConditionInstant(c: RuleCondition, m: RuleMetrics, now: Date): boolean {
   switch (c.kind) {
+    case "hueState": {
+      // Zustand eines Hue-Untergeräts prüfen (Leuchte an/aus oder Bewegung).
+      if (!c.hueSourceId || !c.hueServiceId) return false;
+      const snap = getHueSnapshot(c.hueSourceId);
+      if (!snap || !snap.ok) return false;
+      const dev = snap.subDevices.find((s) => s.serviceId === c.hueServiceId);
+      if (!dev) return false;
+      if (c.hueExpectOn != null) return !!dev.on === c.hueExpectOn;
+      if (c.hueExpectMotion != null) return dev.motion === c.hueExpectMotion;
+      return false;
+    }
+    case "ccuState": {
+      // Zustand eines CCU-Datenpunkts prüfen (Bool oder Zahlenvergleich).
+      if (!c.ccuSourceId || !c.ccuIseId) return false;
+      const snap = getHubSnapshot(c.ccuSourceId);
+      if (!snap || !snap.ok) return false;
+      const dev = snap.subDevices.find((s) => s.id === c.ccuIseId);
+      if (!dev) return false;
+      if (c.ccuExpectBool != null) return dev.wert === c.ccuExpectBool;
+      if (c.ccuThreshold != null && typeof dev.wert === "number") {
+        return c.ccuCompare === "lt" ? dev.wert < c.ccuThreshold : dev.wert > c.ccuThreshold;
+      }
+      return false;
+    }
+    case "alarmMode": {
+      // Alarm-Modus einer CCU/HCU-Quelle prüfen.
+      if (!c.alarmSourceId || !c.alarmExpectModus) return false;
+      const snap = getHubSnapshot(c.alarmSourceId);
+      if (!snap || !snap.ok || !snap.alarm) return false;
+      return snap.alarm.modus === c.alarmExpectModus;
+    }
+    case "ssEvent": {
+      // Kamera-Ereignis (Bewegung/Klassifikation) als Auslöser. Impuls-Charakter:
+      // gilt kurz nach dem Ereignis als erfüllt (wie ein Taster).
+      if (!c.ssSourceId || c.ssCam == null || !c.ssArt) return false;
+      return hatSsEreignis(c.ssSourceId, c.ssCam, c.ssArt);
+    }
+    case "klimaState": {
+      // Zustand einer Klimaanlage prüfen (an/aus oder Raumtemperatur-Vergleich).
+      if (!c.klimaSourceId) return false;
+      const st = getAcState(c.klimaSourceId);
+      if (!st || !st.ok) return false;
+      if (c.klimaExpectPower != null) return !!st.power === c.klimaExpectPower;
+      if (c.klimaThreshold != null && st.roomTemp != null) {
+        return c.klimaCompare === "lt" ? st.roomTemp < c.klimaThreshold : st.roomTemp > c.klimaThreshold;
+      }
+      return false;
+    }
+    case "valloxState": {
+      // Zustand der Lüftung prüfen (an/aus oder Lüfterstufe-Vergleich).
+      if (!c.valloxSourceId) return false;
+      const st = getValloxState(c.valloxSourceId);
+      if (!st || !st.ok) return false;
+      if (c.valloxExpectPower != null) return !!st.on === c.valloxExpectPower;
+      if (c.valloxThreshold != null && st.speed != null) {
+        return c.valloxCompare === "lt" ? st.speed < c.valloxThreshold : st.speed > c.valloxThreshold;
+      }
+      return false;
+    }
+    case "airState": {
+      // Luftsensor-Messwert vergleichen (Feinstaub/Temperatur/Druck). Fehlt die
+      // Metrik (Altbestand: Dropdown zeigte den Default an, ohne ihn zu speichern),
+      // gilt "pm25" als Default – sonst würde die Bedingung fälschlich nie greifen.
+      const metric = c.airMetric ?? "pm25";
+      if (!c.airSourceId || c.airThreshold == null) return false;
+      const st = getAirState(c.airSourceId);
+      if (!st || !st.ok) return false;
+      const wert = st[metric];
+      if (wert == null) return false;
+      return c.airCompare === "lt" ? wert < c.airThreshold : wert > c.airThreshold;
+    }
+    case "prusaState": {
+      // 3D-Drucker: Fortschritt/Druckstatus/Restzeit prüfen.
+      if (!c.prusaSourceId) return false;
+      const st = getPrusaState(c.prusaSourceId);
+      if (!st || !st.ok) return false;
+      const metric = c.prusaMetric ?? "progress";
+      if (metric === "printing") {
+        return (st.state ?? "").toUpperCase() === "PRINTING";
+      }
+      const wert = metric === "progress" ? st.jobFortschritt
+        : metric === "remainingMin" ? (st.jobRestzeitSek != null ? st.jobRestzeitSek / 60 : undefined)
+        : undefined;
+      if (wert == null || c.prusaThreshold == null) return false;
+      return c.prusaCompare === "lt" ? wert < c.prusaThreshold : wert > c.prusaThreshold;
+    }
+    case "evccState": {
+      // Elektroauto: Ladestand, Verbindung, Ladeaktivität, Lademodus prüfen.
+      if (!c.evccSourceId) return false;
+      const st = getEvccState(c.evccSourceId);
+      if (!st || !st.ok) return false;
+      const metric = c.evccMetric ?? "soc";
+      if (metric === "connected") return !!st.connected === (c.evccExpect !== "false");
+      if (metric === "charging") return !!st.charging === (c.evccExpect !== "false");
+      if (metric === "mode") return (st.mode ?? "") === (c.evccExpect ?? "");
+      // soc
+      if (st.vehicleSoc == null || c.evccThreshold == null) return false;
+      return c.evccCompare === "lt" ? st.vehicleSoc < c.evccThreshold : st.vehicleSoc > c.evccThreshold;
+    }
     case "time": {
       const wd = now.getDay();
       if (c.weekdays && c.weekdays.length && !c.weekdays.includes(wd)) return false;
@@ -713,9 +830,9 @@ export async function evaluateRules(
           "Zielzustand vollständig erreicht – Regel gilt als laufend");
         persistActiveState();
         if (rule.notifyOnActivate) {
-          void sendNtfy(`Regel „${rule.name}" gilt als laufend: der Zielzustand ist vollständig erreicht.`, {
+          sendRuleNtfy(`Regel „${rule.name}" gilt als laufend: der Zielzustand ist vollständig erreicht.`, {
             title: "HEMS-Automatisierung", priority: 3, tags: ["gear"],
-          });
+          }, rule.id);
         }
       } else if (rt.active && atTarget === false) {
         // Mindestens eine Aktion ist nicht mehr im Ziel (z. B. Aktor extern
@@ -753,9 +870,9 @@ export async function evaluateRules(
           db.addRuleLog(rule.id, rule.name, "on", "Einschaltbedingung erfüllt (ohne Ausschaltbedingung – einmalige Auslösung)");
           rt.firedOnce = true;
           if (rule.notifyOnActivate) {
-            void sendNtfy(`Regel „${rule.name}" wurde ausgelöst.`, {
+            sendRuleNtfy(`Regel „${rule.name}" wurde ausgelöst.`, {
               title: "HEMS-Automatisierung", priority: 3, tags: ["gear"],
-            });
+            }, rule.id);
           }
         }
       } else {
@@ -774,9 +891,9 @@ export async function evaluateRules(
       rt.watchedSwitches = undefined;
       persistActiveState();
       if (rule.notifyOnActivate) {
-        void sendNtfy(`Regel „${rule.name}" wurde beendet, weil ihr Ausgang extern zurückgeschaltet wurde.`, {
+        sendRuleNtfy(`Regel „${rule.name}" wurde beendet, weil ihr Ausgang extern zurückgeschaltet wurde.`, {
           title: "HEMS-Automatisierung", priority: 3, tags: ["gear"],
-        });
+        }, rule.id);
       }
     } else if (rt.active && offOk) {
       // Ausschalten + Ergebnistext
@@ -822,6 +939,14 @@ function buildResult(rt: RuleRuntime, m: RuleMetrics, getSourceEnergyDay: (id: s
   return parts.join(", ");
 }
 
+// Führt EINE einzelne Aktion aus dem Zugangskontroll-Kontext aus (wiederverwendet
+// die Regel-Aktionslogik). Ein synthetisches Pseudo-Rule liefert nur Name/ID für
+// Logs. "on" = true (die Aktion soll ihren aktiven Zustand herstellen).
+export async function runAccessAction(action: RuleAction, sources: SourceConfig[]): Promise<void> {
+  const pseudo = { id: "access", name: "Zugangskontrolle", onActions: [], offActions: [] } as unknown as AutomationRule;
+  await runSingleAction(pseudo, action, true, sources);
+}
+
 async function runAction(rule: AutomationRule, on: boolean, sources: SourceConfig[], m?: RuleMetrics): Promise<void> {
   // Beim Einschalten die onActions ausführen, beim Ausschalten die offActions.
   // Es wird ausschließlich ausgeführt, was explizit hinterlegt ist – kein
@@ -836,11 +961,11 @@ async function runSingleAction(rule: AutomationRule, action: RuleAction, on: boo
   if (!action) return;
   if (action.type === "notify") {
     const text = interpolateMessage(action.message ?? `Regel „${rule.name}" ausgelöst.`, m);
-    await sendNtfy(text, {
+    sendRuleNtfy(text, {
       title: "HEMS-Automatisierung",
       priority: 4,
       tags: ["warning"],
-    });
+    }, rule.id);
   } else if (action.type === "switch" && action.targetSourceId) {
     const src = sources.find((s) => s.id === action.targetSourceId);
     if (src) {
@@ -861,6 +986,98 @@ async function runSingleAction(rule: AutomationRule, action: RuleAction, on: boo
       }
       await switchSource(src, channel, toOn);
     }
+  } else if (action.type === "hue" && action.hueSourceId && action.hueServiceId) {
+    // Hue-Leuchte über die Bridge schalten. Richtung explizit über hueSwitchTo,
+    // sonst nach Regel-Phase (on = Einschalt-Aktion).
+    const src = sources.find((s) => s.id === action.hueSourceId && s.role === "hueBridge");
+    if (src) {
+      const toOn = action.hueSwitchTo ? action.hueSwitchTo === "on" : on;
+      const r = await schalteHueLicht(src.hueBridgeHost ?? "", src.hueAppKey ?? "", action.hueServiceId, toOn, action.hueBrightness);
+      db.addRuleLog(rule.id, rule.name, toOn ? "on" : "off",
+        r.ok ? `Hue-Leuchte ${toOn ? "ein" : "aus"}geschaltet` : `Hue-Schalten fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+  } else if (action.type === "ccu" && action.ccuSourceId && action.ccuIseId) {
+    // CCU/HCU-Aktion: Schalten oder Rollladen (Position/Hoch/Runter/Stopp),
+    // auch für Gruppen (ccuIseId = "group:<id>").
+    const src = sources.find((s) => s.id === action.ccuSourceId && s.role === "ccuHub");
+    if (src) {
+      const cfg = { hubTyp: src.hubTyp, host: src.ccuHost ?? "", port: src.ccuPort, hcuAuthToken: src.hcuAuthToken, hcuSgtin: src.hcuSgtin };
+      let wert: number | boolean | "stop";
+      let logText: string;
+      if (action.ccuAktion === "shutter") {
+        // Rollladen: up=0%(auf), down=100%(zu), stop, position=Wert
+        if (action.ccuShutter === "up") { wert = 0; logText = "Rollladen hoch"; }
+        else if (action.ccuShutter === "down") { wert = 100; logText = "Rollladen runter"; }
+        else if (action.ccuShutter === "stop") { wert = "stop"; logText = "Rollladen gestoppt"; }
+        else { wert = Math.max(0, Math.min(100, action.ccuPosition ?? 0)); logText = `Rollladen auf ${wert}%`; }
+      } else {
+        // Schalten (an/aus). Richtung explizit oder nach Regel-Phase.
+        const toOn = action.ccuSwitchTo ? action.ccuSwitchTo === "on" : on;
+        wert = toOn; logText = `CCU-Gerät ${toOn ? "ein" : "aus"}geschaltet`;
+      }
+      const r = await schalteHub(cfg, action.ccuIseId, wert);
+      db.addRuleLog(rule.id, rule.name, (wert === true || (typeof wert === "number" && wert > 0)) ? "on" : "off",
+        r.ok ? logText : `CCU-Schalten fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+  } else if (action.type === "alarm" && action.alarmSourceId && action.alarmModus) {
+    // Alarm-Modus setzen (nur HCU). Bewusst ohne Sirene-Auslösung in Regeln.
+    const src = sources.find((s) => s.id === action.alarmSourceId && s.role === "ccuHub");
+    if (src) {
+      const r = await setAlarmModus({ hubTyp: src.hubTyp, host: src.ccuHost ?? "", port: src.ccuPort, hcuAuthToken: src.hcuAuthToken, hcuSgtin: src.hcuSgtin }, action.alarmModus);
+      db.addRuleLog(rule.id, rule.name, action.alarmModus === "unscharf" ? "off" : "on",
+        r.ok ? `Alarm-Modus: ${action.alarmModus}` : `Alarm-Schalten fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+
+  } else if (action.type === "klima" && action.klimaSourceId) {
+    // Klimaanlage steuern (an/aus, Temperatur, Modus) über MQTT.
+    const src = sources.find((s) => s.id === action.klimaSourceId && s.role === "mitsubishiAc");
+    if (src) {
+      const cfg = { extern: src.geraeteMqttExtern, host: src.geraeteMqttHost, port: src.geraeteMqttPort, topic: src.geraeteMqttTopic ?? "mitsubishi2mqtt" };
+      let r: { ok: boolean; error?: string }; let logText: string;
+      if (action.klimaAktion === "temp" && action.klimaTemp != null) {
+        r = acSetTemp(cfg, action.klimaTemp); logText = `Klima Zieltemperatur ${action.klimaTemp}°C`;
+      } else if (action.klimaAktion === "mode" && action.klimaMode) {
+        r = acSetMode(cfg, action.klimaMode); logText = `Klima Modus ${action.klimaMode}`;
+      } else {
+        const toOn = action.klimaPower != null ? action.klimaPower : on;
+        const cur = getAcState(src.id);
+        r = acSetPower(cfg, toOn, cur?.mode); logText = `Klima ${toOn ? "ein" : "aus"}geschaltet`;
+      }
+      db.addRuleLog(rule.id, rule.name, logText.includes("aus") ? "off" : "on",
+        r.ok ? logText : `Klima-Schalten fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+
+  } else if (action.type === "vallox" && action.valloxSourceId) {
+    // Lüftung steuern (an/aus, Stufe) über MQTT.
+    const src = sources.find((s) => s.id === action.valloxSourceId && s.role === "vallox");
+    if (src) {
+      const cfg = { extern: src.geraeteMqttExtern, host: src.geraeteMqttHost, port: src.geraeteMqttPort, topic: src.geraeteMqttTopic ?? "vallox" };
+      let r: { ok: boolean; error?: string }; let logText: string;
+      if (action.valloxAktion === "speed" && action.valloxSpeed != null) {
+        r = valloxSetSpeed(cfg, action.valloxSpeed); logText = `Lüftung Stufe ${action.valloxSpeed}`;
+      } else {
+        const toOn = action.valloxPower != null ? action.valloxPower : on;
+        r = valloxSetPower(cfg, toOn); logText = `Lüftung ${toOn ? "ein" : "aus"}geschaltet`;
+      }
+      db.addRuleLog(rule.id, rule.name, logText.includes("aus") ? "off" : "on",
+        r.ok ? logText : `Lüftung-Schalten fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+
+  } else if (action.type === "evcc" && action.evccSourceId) {
+    // Elektroauto-Ladung steuern (Lademodus oder Ladelimit) über evcc.
+    const src = sources.find((s) => s.id === action.evccSourceId && s.role === "evcc");
+    if (src) {
+      const cfg = { host: src.evccHost ?? "", loadpoint: src.evccLoadpoint };
+      let r: { ok: boolean; error?: string }; let logText: string;
+      if (action.evccAktion === "limitsoc" && action.evccLimitSoc != null) {
+        r = await evccSetLimitSoc(cfg, action.evccLimitSoc); logText = `E-Auto Ladelimit ${action.evccLimitSoc}%`;
+      } else {
+        const mode = action.evccMode ?? "pv";
+        r = await evccSetMode(cfg, mode); logText = `E-Auto Lademodus ${mode}`;
+      }
+      db.addRuleLog(rule.id, rule.name, "on", r.ok ? logText : `E-Auto-Steuern fehlgeschlagen: ${r.error ?? "?"}`);
+    }
+
   } else if (action.type === "timer") {
     // Der Timer startet implizit mit dem Einschalten der Regel (Zeitpunkt in
     // rt.onSnapshot). Die eigentliche Auswertung erfolgt über die Ausschalt-

@@ -41,6 +41,10 @@ export const DATA_TABLES: DataTable[] = [
     columns: ["ts", "liter"], conflict: ["ts"] },
   { table: "wp_data", timeCol: "ts", kind: "ts",
     columns: ["ts", "label", "value"], conflict: ["ts", "label"] },
+  { table: "device_data", timeCol: "ts", kind: "ts",
+    columns: ["source_id", "ts", "label", "value"], conflict: ["source_id", "ts", "label"] },
+  { table: "device_power", timeCol: "ts", kind: "ts",
+    columns: ["source_id", "ts", "value"], conflict: ["source_id", "ts"] },
   { table: "warmwasser_data", timeCol: "ts", kind: "ts",
     columns: ["ts", "tankUp", "tankDown"], conflict: ["ts"] },
   { table: "wp_kpi_tag", timeCol: "tag", kind: "date",
@@ -55,6 +59,8 @@ export const DATA_TABLES: DataTable[] = [
     columns: ["id", "date", "value", "source"], conflict: ["id"] },
   { table: "pv_prognose", timeCol: "date", kind: "date",
     columns: ["date", "anlage_id", "anlage_name", "slots", "kwh_total", "updated_at"], conflict: ["date", "anlage_id"] },
+  { table: "co2_log", timeCol: "ts", kind: "ts",
+    columns: ["ts", "intensitaet", "netzbezugKwh", "emissionenG"], conflict: ["ts"] },
 ];
 
 // Menschlich lesbare Bezeichnungen (für die UI und den Import-Bericht).
@@ -65,12 +71,15 @@ export const DATA_TABLE_LABELS: Record<string, string> = {
   sharing_viertelstunden: "Sharing-Viertelstundenwerte",
   wasser_viertelstunden: "Wasser-Viertelstundenwerte",
   wp_data: "Wärmepumpen-Daten",
+  device_data: "Geräte-Datenreihen (Luftsensor, Lüftung, 3D-Drucker)",
+  device_power: "Geräte-Energiemessung (hochaufgelöst)",
   wp_kpi_tag: "Wärmepumpen-Kennzahlen (Tageswerte)",
   warmwasser_data: "Warmwasser-Temperaturen",
   history: "Tagesbilanzen",
   spotpreise: "Börsenstrompreise",
   drosselungen: "Drosselungen",
   pv_prognose: "PV-Ertragsprognose",
+  co2_log: "CO₂-Bilanz (Netzintensität)",
   logs: "Log-Meldungen",
   rule_log: "Regel-Protokoll",
 };
@@ -344,6 +353,7 @@ const DELETE_PROTECTED = new Set(["spotpreise"]);
 const LOG_TABLES: Array<{ table: string; timeCol: string; label: string }> = [
   { table: "logs", timeCol: "ts", label: "Log-Meldungen" },
   { table: "rule_log", timeCol: "ts", label: "Regel-Protokoll" },
+  { table: "access_log", timeCol: "ts", label: "Zugangskontrolle-Protokoll" },
 ];
 
 // Löscht alle Messdaten im Tagesbereich [vonDate, bisDate] (inklusive) aus allen

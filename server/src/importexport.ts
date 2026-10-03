@@ -48,6 +48,9 @@ export const SECTIONS = [
   { key: "regelgruppen", label: "Regelgruppen" },
   { key: "benachrichtigungen", label: "Benachrichtigungen (ntfy)" },
   { key: "eebus", label: "EEBUS (§14a/§9: Anbindung, WR-Regelung, SteuVE)" },
+  { key: "schnellstart", label: "Schnellstart-Kacheln (Kacheln & Ordner)" },
+  { key: "anomalie", label: "Anomalie-Erkennung (Einstellungen)" },
+  { key: "zugangskontrolle", label: "Zugangskontrolle (gültige Tags/PINs)" },
 ] as const;
 
 export type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -101,7 +104,7 @@ export function countSection(key: SectionKey): number {
     const ab = Array.isArray((data as any).abnehmer) ? (data as any).abnehmer.length : 0;
     return 1 + ab;
   }
-  if (key === "eebus") {
+  if (key === "eebus" || key === "schnellstart" || key === "anomalie" || key === "zugangskontrolle") {
     // Nur tatsächlich vorhandene (nicht-null) Konfigurationen zählen.
     let n = 0;
     for (const v of Object.values(data)) if (v != null) n += 1;
@@ -160,6 +163,22 @@ export function collectSection(key: SectionKey): any {  const s = db.loadSetting
         lppControlConfig: parse(db.getSettingRaw("lppControlConfig")),
         lpcMonitorConfig: parse(db.getSettingRaw("lpcMonitorConfig")),
       };
+    }
+    case "schnellstart": {
+      // Schnellstart-Kacheln der Übersicht: Kacheln, Ordner und Reihenfolge.
+      const parse = (raw: string | undefined) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+      return {
+        overviewTiles: parse(db.getSettingRaw("overviewTiles")),
+        tileFolders: parse(db.getSettingRaw("tileFolders")),
+        tileOrder: parse(db.getSettingRaw("tileOrder")),
+      };
+    }
+    case "anomalie": {
+      const parse = (raw: string | undefined) => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+      return { anomalieConfig: parse(db.getSettingRaw("anomalieConfig")) };
+    }
+    case "zugangskontrolle": {
+      return { accessEntries: db.loadAccessEntries() };
     }
     default:
       return null;
@@ -319,6 +338,27 @@ function applySection(
         if (data.eebusConfig != null) db.setSettingRaw("eebusConfig", JSON.stringify(data.eebusConfig));
         if (data.lppControlConfig != null) db.setSettingRaw("lppControlConfig", JSON.stringify(data.lppControlConfig));
         if (data.lpcMonitorConfig != null) db.setSettingRaw("lpcMonitorConfig", JSON.stringify(data.lpcMonitorConfig));
+      }
+      break;
+    }
+    case "schnellstart": {
+      // Schnellstart-Kacheln (Kacheln, Ordner, Reihenfolge) zurückschreiben.
+      if (data && typeof data === "object") {
+        if (data.overviewTiles != null) db.setSettingRaw("overviewTiles", JSON.stringify(data.overviewTiles));
+        if (data.tileFolders != null) db.setSettingRaw("tileFolders", JSON.stringify(data.tileFolders));
+        if (data.tileOrder != null) db.setSettingRaw("tileOrder", JSON.stringify(data.tileOrder));
+      }
+      break;
+    }
+    case "anomalie": {
+      if (data && typeof data === "object" && data.anomalieConfig != null) {
+        db.setSettingRaw("anomalieConfig", JSON.stringify(data.anomalieConfig));
+      }
+      break;
+    }
+    case "zugangskontrolle": {
+      if (data && typeof data === "object" && Array.isArray(data.accessEntries)) {
+        db.saveAccessEntries(data.accessEntries);
       }
       break;
     }
